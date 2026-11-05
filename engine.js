@@ -537,7 +537,8 @@
       if (e.renouv && e.pending) e.ok10 = null; // test fait après la répartition de l'AB
       else if (e.renouv && (e.pose > 0 || e.depose > 0)) {
         e.ok10 = e.depose > 0.9 * e.pose && e.depose < 1.1 * e.pose;
-        if (!e.ok10) add('rouge', `${e.eotp} (CP ${e.cp}) : écart pose/dépose supérieur à 10 % — pose ${e.pose} ${e.unit}, dépose ${e.depose} ${e.unit}.`, 'eotp:' + e.eotp);
+        const q = n => e.unit === 'm' ? `${String(n).replace('.', ',')} m` : `${n} ${['27'].includes(e.cp) ? 'ouvrage' : 'branchement'}${n > 1 ? 's' : ''}`;
+        if (!e.ok10) add('rouge', `${e.eotp} (CP ${e.cp}) : écart pose/dépose supérieur à 10 % — pose : ${q(e.pose)}, dépose : ${q(e.depose)}.`, 'eotp:' + e.eotp);
       }
       return e;
     }).sort((a, b) => a.eotp.localeCompare(b.eotp));
