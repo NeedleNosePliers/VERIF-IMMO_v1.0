@@ -1,7 +1,7 @@
 /* VERIF-IMMO — interface. Tout est traité localement dans le navigateur. */
 (function () {
   'use strict';
-  const VERSION = '1.0';
+  const VERSION = '1.1';
   const APPNAME = 'VERIF-IMMO';
   const E = window.VIEngine;
   const STORE_KEY = 'verifimmo.v1';
@@ -193,7 +193,6 @@
           a.eotps.push({ code: r.code, designation: r.designation, src: 'capture' }); added++;
         }
       }
-      a.eotps = sortEotps(a.eotps);
       a.eotpVerified = false;
       ui.ocr = null; touch(a); render();
       toast(`${added} EOTP ajouté(s). Vérifie la liste puis coche « Liste vérifiée ».`);
@@ -290,7 +289,7 @@
         <td class="wrap"><input class="t" style="min-width:240px" data-eotp-des="${i}" value="${esc(e.designation || '')}"></td>
         <td>${p ? (p.elem ? 'Élément' : p.cp ? 'Niveau CP' : p.chantier ? 'Chantier' : 'Projet') : '<span class="pill none">code invalide</span>'}</td>
         <td>${p && p.cp ? esc(p.cp) : ''}</td>
-        <td><button class="btn sm danger" data-eotp-del="${i}">✕</button></td></tr>`;
+        <td class="cell"><button class="btn sm sec" data-eotp-ins="${i}" title="Insérer une ligne en dessous">+</button><button class="btn sm sec" data-eotp-up="${i}" title="Monter" ${i ? '' : 'disabled'}>↑</button><button class="btn sm sec" data-eotp-dn="${i}" title="Descendre" ${i < a.eotps.length - 1 ? '' : 'disabled'}>↓</button><button class="btn sm danger" data-eotp-del="${i}" title="Supprimer">✕</button></td></tr>`;
     }).join('');
     const ocr = ui.ocr ? `<div class="card"><b id="ocrst">${esc(ui.ocr.status)}</b><div class="prog"><i id="ocrbar" style="width:${Math.round(ui.ocr.p * 100)}%"></i></div>
       <div class="thumbs">${ui.ocr.thumbs.map(u => `<img src="${u}" alt="capture">`).join('')}</div>
@@ -303,7 +302,7 @@
       <div class="card"><div class="row"><h2 class="grow" style="margin:0">Vérification (${a.eotps.length} lignes)</h2>
         <button class="btn sm sec" id="eotpAdd">+ Ajouter une ligne</button>
         ${a.eotps.length ? '<button class="btn sm danger" id="eotpClear">Vider la liste</button>' : ''}</div>
-      <p class="small muted">Compare chaque ligne avec l'écran SAP et corrige si besoin. Les EOTP sont toujours écrits en entier (ex : RV4-0000000-1-C1-22-I01).</p>
+      <p class="small muted">Les lignes sont dans le même ordre que dans SAP. Compare chaque ligne avec l'écran SAP et corrige si besoin (+ insère une ligne en dessous, ↑ ↓ déplacent). Les EOTP sont toujours écrits en entier (ex : RV4-0000000-1-C1-22-I01).</p>
       ${a.eotps.length ? `<div class="tw"><table><thead><tr><th>Élément d'OTP</th><th>Désignation</th><th>Niveau</th><th>CP</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
       <label class="row" style="margin-top:12px;font-weight:600;cursor:pointer"><input type="checkbox" id="eotpOk" ${a.eotpVerified ? 'checked' : ''} style="width:20px;height:20px"> Liste vérifiée par rapport à SAP</label>` : '<p class="muted">Aucun EOTP pour l\'instant.</p>'}
       </div>${a.eotps.length ? '<div class="row"><button class="btn" data-tab="resultat">Voir le résultat →</button></div>' : ''}`;
@@ -547,8 +546,12 @@
     // eotp
     const di = $('#dropImg'), ii = $('#inImg');
     if (di) { dropify(di, files => handleImages(files)); ii.onchange = e => handleImages(e.target.files); }
-    document.querySelectorAll('[data-eotp-code]').forEach(i => i.onchange = () => { const e = a.eotps[+i.dataset.eotpCode]; e.code = i.value.trim().toUpperCase(); a.eotps = sortEotps(a.eotps); touch(a); render(); });
+    document.querySelectorAll('[data-eotp-code]').forEach(i => i.onchange = () => { const e = a.eotps[+i.dataset.eotpCode]; e.code = i.value.trim().toUpperCase(); touch(a); render(); });
     document.querySelectorAll('[data-eotp-des]').forEach(i => i.onchange = () => { a.eotps[+i.dataset.eotpDes].designation = i.value.trim(); touch(a); render(); });
+    document.querySelectorAll('[data-eotp-ins]').forEach(b => b.onclick = () => { a.eotps.splice(+b.dataset.eotpIns + 1, 0, { code: '', designation: '', src: 'manuel' }); touch(a); render(); });
+    const mv = (i, d) => { const j = i + d; if (j < 0 || j >= a.eotps.length) return; [a.eotps[i], a.eotps[j]] = [a.eotps[j], a.eotps[i]]; touch(a); render(); };
+    document.querySelectorAll('[data-eotp-up]').forEach(b => b.onclick = () => mv(+b.dataset.eotpUp, -1));
+    document.querySelectorAll('[data-eotp-dn]').forEach(b => b.onclick = () => mv(+b.dataset.eotpDn, 1));
     document.querySelectorAll('[data-eotp-del]').forEach(b => b.onclick = () => { a.eotps.splice(+b.dataset.eotpDel, 1); touch(a); render(); });
     const ea = $('#eotpAdd'); if (ea) ea.onclick = () => { a.eotps.push({ code: '', designation: '', src: 'manuel' }); touch(a); render(); };
     const ec = $('#eotpClear'); if (ec) ec.onclick = () => confirmBox('Vider toute la liste des EOTP ?', () => { a.eotps = []; a.eotpVerified = true; touch(a); render(); }, 'Vider');
