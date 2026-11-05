@@ -1,7 +1,7 @@
 /* VERIF-IMMO — interface. Tout est traité localement dans le navigateur. */
 (function () {
   'use strict';
-  const VERSION = '1.2';
+  const VERSION = '1.3';
   const APPNAME = 'VERIF-IMMO';
   const E = window.VIEngine;
   const STORE_KEY = 'verifimmo.v1';
@@ -295,7 +295,6 @@
       <div class="thumbs">${ui.ocr.thumbs.map(u => `<img src="${u}" alt="capture">`).join('')}</div>
       <p class="small muted">La première lecture charge le moteur (quelques secondes). Tout se passe sur cet appareil.</p></div>` : '';
     return `<div class="card"><h2>Liste des EOTP de l'affaire (SAP)</h2>
-      <p class="muted small">Dans SAP, onglet « Donn. base » de la structure du projet : faites une capture d'écran (colonnes « Élément d'OTP » et « Désignation » entières). Plusieurs captures possibles si la liste est longue. Sur PC : <b>Win + Maj + S</b> puis <b>Ctrl + V</b> ici.</p>
       <label class="drop" id="dropImg"><b>Déposer / coller les captures d'écran ici</b><br><span class="small">ou cliquer pour choisir (photos sur téléphone)</span>
         <input type="file" id="inImg" accept="image/*" multiple hidden></label></div>
       ${ocr}
