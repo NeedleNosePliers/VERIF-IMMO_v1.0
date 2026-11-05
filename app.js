@@ -1,7 +1,7 @@
 /* VERIF-IMMO — interface. Tout est traité localement dans le navigateur. */
 (function () {
   'use strict';
-  const VERSION = '1.5';
+  const VERSION = '1.6';
   const APPNAME = 'VERIF-IMMO';
   const E = window.VIEngine;
   const STORE_KEY = 'verifimmo.v1';
@@ -209,6 +209,7 @@
   function render() {
     forceSpecs = {};
     const main = $('#main');
+    main.classList.toggle('wide', ui.view === 'affaire' && ui.tab === 'troncons');
     if (ui.view === 'help') main.innerHTML = renderHelp();
     else if (ui.view === 'affaire' && cur()) main.innerHTML = renderAffaire();
     else { ui.view = 'home'; main.innerHTML = renderHome(); }
@@ -443,7 +444,7 @@
           choice = `<span class="cell" title="Part de ce tronçon tubé reportée en CP 22 (surplus de tubage)">CP22 : <input class="n" type="text" inputmode="decimal" data-split="${esc(x.uid)}" value="${user != null ? fmt(user) : ''}" placeholder="${fmt(x.split22 || 0)}"> m</span>`;
         }
         const yr = kind === 'pose' ? E.dateDisp(x.src.etatDepuis) : E.dateDisp(x.src.dateInst);
-        return `<tr class="${x.a.ignore ? 'ign' : ''}"><td class="num">${x.src.row}</td><td>${esc(id)}</td><td class="wrap" style="min-width:150px">${esc(x.src.fonction)}</td>
+        return `<tr class="${x.a.ignore ? 'ign' : ''}"><td class="num">${x.src.row}</td><td>${esc(id)}</td><td class="fn">${esc(x.src.fonction)}</td>
           <td>${fcell(k('type'), E.TYPE_LABEL[x.a.type], E.TYPE_LABEL[x.auto.type])}</td>
           <td title="${esc(x.src.materiau)}">${fcell(k('matiere'), x.a.matiere, x.auto.matiere)}${x.a.matiere === '(Autre)' ? ` <span class="small muted">${esc((x.src.materiau.match(/\(([^)]+)\)/) || [, ''])[1])}</span>` : ''}</td>
           <td class="num">${fmt(x.src.diam, 0)}</td><td>${fcell(k('IN'), x.a.IN || '?', x.auto.IN)}</td>
@@ -451,13 +452,13 @@
           <td class="num">${fcell(k('longueur'), fmt(x.a.longueur), fmt(x.auto.longueur))}</td>
           <td class="num">${x.src.lSig == null ? '<span class="muted">vide</span>' : fmt(x.src.lSig)}</td>
           <td title="${esc(x.src.technique)} · ${esc(x.src.etat)}">${x.a.type === 'RES' ? fcell(k('tubage'), x.a.tubage ? 'Oui' : 'Non', x.auto.tubage ? 'Oui' : 'Non') : '<span class="muted">—</span>'}</td>
-          <td class="wrap" style="min-width:170px">${allocs || '<span class="muted">—</span>'} <button class="fbtn" data-force="${esc(k('eotp'))}" title="Forcer l'EOTP de toute la ligne">✎</button></td>
+          <td class="al">${allocs || '<span class="muted">—</span>'} <button class="fbtn" data-force="${esc(k('eotp'))}" title="Forcer l'EOTP de toute la ligne">✎</button></td>
           <td>${choice}</td>
           <td>${x.a.type === 'RES' ? fcell(k('brtPDR'), x.a.brtPDR ? 'Oui' : 'Non', 'Non') : ''}</td>
           <td>${fcell(k('ignore'), x.a.ignore ? 'Oui' : 'Non', 'Non')}</td>
-          <td class="small muted" style="max-width:220px;overflow:hidden;text-overflow:ellipsis" title="${esc(x.src.commentaire)}">${esc(x.src.commentaire)}</td></tr>`;
+          <td class="cm small muted" title="${esc(x.src.commentaire)}">${esc(x.src.commentaire)}</td></tr>`;
       }).join('');
-      return `<div class="tw"><table><thead><tr><th class="num">Ligne</th><th>Id SIG</th><th>Fonction réseau</th><th>Type</th><th>Matière</th><th class="num">Ø ext.</th><th>IN</th><th>Année</th><th class="num">Long. inst.</th><th class="num">Long. SIG</th><th>Tubage</th><th>EOTP affecté(s)</th><th>${kind === 'depose' ? 'Choix AB' : 'Surplus tubage'}</th><th>Brt PDR</th><th>Ignorer</th><th>Commentaire carto</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+      return `<div class="tw"><table class="tr"><thead><tr><th class="num">Ligne</th><th>Id SIG</th><th>Fonction réseau</th><th>Type</th><th>Matière</th><th class="num">Ø ext.</th><th>IN</th><th>Année</th><th class="num">Long. inst.</th><th class="num">Long. SIG</th><th>Tubage</th><th>EOTP affecté(s)</th><th>${kind === 'depose' ? 'Choix AB' : 'Surplus tubage'}</th><th>Brt PDR</th><th>Ignorer</th><th>Commentaire carto</th></tr></thead><tbody>${rows}</tbody></table></div>`;
     };
     return `${pending.length ? `<div class="card">${pending.map(c => `<div class="ctl orange"><span class="lv">à faire</span><span>${esc(c.msg)}</span></div>`).join('')}
         <p class="small muted">Choisissez, dans le tableau Dépose (colonne « Choix AB »), les tronçons ou la part de tronçon qui partent en abandon.</p></div>` : ''}
