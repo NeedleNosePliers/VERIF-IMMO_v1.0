@@ -1,7 +1,7 @@
 /* VERIF-IMMO — interface. Tout est traité localement dans le navigateur. */
 (function () {
   'use strict';
-  const VERSION = '1.9';
+  const VERSION = '2.0';
   const APPNAME = 'VERIF-IMMO';
   const E = window.VIEngine;
   const STORE_KEY = 'verifimmo.v1';
@@ -379,8 +379,8 @@
         <td>${fcell(kc, r.categorie, r.autoCat)}</td><td class="num">${r.lines.length}</td></tr>`;
     }).join('');
     const tot = R.eotpTotals.map(e => `<tr><td>${esc(e.eotp)}</td><td><span class="pill ${CPCLS(e.cp)}">${esc(e.cp)}</span></td>
-      <td class="num">${fmtQ(e.pose, e.unit)}</td><td class="num">${fmtQ(e.depose, e.unit)}</td><td class="num"><b>${pct(e)}</b></td>
-      <td>${!e.renouv ? '<span class="muted">—</span>' : e.ok10 === null ? '<span class="pill" style="background:var(--orange-l);color:var(--orange)">après choix AB</span>' : e.ok10 ? '<span class="pill" style="background:var(--green-l);color:#2f6b10">OK</span>' : '<span class="pill none">écart &gt; 10 %</span>'}</td></tr>`).join('');
+      <td class="num">${fmtQ(e.pose, e.unit)}</td><td class="num">${fmtQ(e.depose, e.unit)}${e.abAChoisir > 0 ? `<div class="small muted">+ ${fmtQ(e.abAChoisir, e.unit)} à mettre en AB</div>` : ''}</td><td class="num"><b>${pct(e)}</b></td>
+      <td>${!e.renouv ? '<span class="muted">—</span>' : e.ok10 ? '<span class="pill" style="background:var(--green-l);color:#2f6b10">OK</span>' : '<span class="pill none">écart &gt; 10 %</span>'}</td></tr>`).join('');
     // PDR
     const pdrRows = R.pdr.map(p => {
       const ks = ['pdr', 'eotp', 'nature'].map(f => `P:${p.key}:${f}`);
@@ -399,8 +399,8 @@
         <p class="small muted">Regroupées par EOTP, action, type, matière, classe IN, année et INSEE (comme VERIF_IMMO). Longueurs = longueur installée. Les quantités et catégories sont forçables (✎).</p>
         <div class="tw"><table><thead><tr><th>EOTP</th><th>CP</th><th>Action</th><th>Ligne</th><th class="num">Quantité</th><th>Catégorie</th><th class="num">Tronçons</th></tr></thead><tbody>${rec || '<tr><td colspan="7" class="muted">—</td></tr>'}</tbody></table></div></div>
       <div class="card"><h2>Totaux par EOTP et test ±10 %</h2>
-        <p class="small muted">Sur les EOTP de renouvellement (CP 17, 18, 20, 21, 22, 23, 25, 26, 27), la dépose doit être comprise entre 90 % et 110 % de la pose.</p>
-        <div class="tw"><table><thead><tr><th>EOTP</th><th>CP</th><th class="num">Pose</th><th class="num">Dépose</th><th class="num">Dépose / pose</th><th>Test ±10 %</th></tr></thead><tbody>${tot || '<tr><td colspan="6" class="muted">—</td></tr>'}</tbody></table></div></div>
+        <p class="small muted">Sur les EOTP de renouvellement (CP 17, 18, 20, 21, 22, 23, 25, 26, 27), écart = (dépose renouvelée − pose) / pose, à garder entre −10 % et +10 %. La dépose renouvelée ne compte pas la part qui doit partir en AB.</p>
+        <div class="tw"><table><thead><tr><th>EOTP</th><th>CP</th><th class="num">Pose</th><th class="num">Dépose renouvelée</th><th class="num">Écart</th><th>Test ±10 %</th></tr></thead><tbody>${tot || '<tr><td colspan="6" class="muted">—</td></tr>'}</tbody></table></div></div>
       <div class="card"><div class="row"><h2 class="grow" style="margin:0">PDR</h2><button class="btn sm sec" id="pdrAdd">+ Ajouter un PDR</button></div>
         <p class="small muted">Les PDR ne figurent pas dans la carto : ils sont détectés dans les désignations SAP (ex : « … : D00000-PDR00000 »).</p>
         ${R.pdr.length ? `<div class="tw"><table><thead><tr><th>PDR</th><th>EOTP</th><th>Nature</th><th>Catégorie</th><th>Origine</th></tr></thead><tbody>${pdrRows}</tbody></table></div>` : '<p class="muted">Aucun PDR.</p>'}</div>`;
@@ -490,7 +490,8 @@
         <p class="small muted" style="margin-top:8px">Le PDF et l'Excel contiennent le verdict, les contrôles, les lignes d'immo, les totaux par EOTP, les PDR, les tronçons et la trace des forçages. Le fichier .json permet de rouvrir l'affaire sur un autre appareil (menu Mes affaires → Importer).</p></div>`;
   }
   // dépose / pose en %
-  const pct = e => e.pose > 0 ? fmt(e.depose / e.pose * 100, 1) + ' %' : (e.depose > 0 ? 'pas de pose' : '—');
+  // écart (dépose − pose) / pose, signé
+  const pct = e => (!e.renouv || e.ecart == null) ? '—' : e.ecart === Infinity ? 'pas de pose' : (e.ecart > 0.0005 ? '+' : '') + fmt(e.ecart * 100, 1) + ' %';
   const fmtVal = v => v === true ? 'Oui' : v === false ? 'Non' : v;
 
   // ----- Aide -----
@@ -644,8 +645,8 @@
       ['Verdict', R.verdict + (a.forces.VERDICT ? ' (forcé, auto : ' + R.autoVerdict + ')' : '')], [], ['Niveau', 'Contrôle'], ...R.controls.map(c => [c.level, c.msg])], [18, 120]);
     add("Lignes d'immo", [['EOTP', 'CP', 'Action', 'Ligne', 'Quantité', 'Unité', 'Catégorie', 'Forcé', 'Nb tronçons'],
       ...R.recap.map(r => [r.eotp, r.cp, r.action, r.libelle, r.qty, r.unit === 'm' ? 'm' : 'nb', r.categorie, (r.forcedQty || r.forcedCat) ? 'Oui' : '', r.lines.length])], [28, 5, 8, 36, 10, 6, 12, 7, 10]);
-    add('Totaux EOTP', [['EOTP', 'CP', 'Pose', 'Dépose', 'Unité', 'Dépose / pose', 'Test ±10 %'],
-      ...R.eotpTotals.map(e => [e.eotp, e.cp, e.pose, e.depose, e.unit === 'm' ? 'm' : 'nb', pct(e), !e.renouv ? '—' : e.ok10 === null ? 'après choix AB' : e.ok10 ? 'OK' : 'ÉCART > 10 %'])], [28, 5, 10, 10, 6, 13, 14]);
+    add('Totaux EOTP', [['EOTP', 'CP', 'Pose', 'Dépose renouvelée', 'Unité', 'Écart', 'Test ±10 %'],
+      ...R.eotpTotals.map(e => [e.eotp, e.cp, e.pose, e.depose, e.unit === 'm' ? 'm' : 'nb', pct(e), !e.renouv ? '—' : e.ok10 ? 'OK' : 'ÉCART > 10 %'])], [28, 5, 10, 10, 6, 13, 14]);
     add('PDR', [['PDR', 'EOTP', 'Nature', 'Catégorie', 'Origine'], ...R.pdr.map(p => [p.pdr, p.eotp, p.nature, p.categorie, p.auto ? 'détecté SAP' : 'manuel'])], [18, 28, 10, 10, 12]);
     add('Tronçons pose', [LINE_HDR, ...lineRows(R, 'pose')], [6, 12, 26, 12, 8, 7, 5, 6, 10, 9, 7, 50, 6, 7]);
     add('Tronçons dépose', [LINE_HDR, ...lineRows(R, 'depose')], [6, 12, 26, 12, 8, 7, 5, 6, 10, 9, 7, 50, 6, 7]);
@@ -706,8 +707,8 @@
     tbl('Contrôles', ['Niveau', 'Contrôle'], R.controls.map(c => [c.level.toUpperCase(), c.msg]), { columnStyles: { 0: { cellWidth: 18 } } });
     tbl("Lignes d'immo à saisir dans SAP", ['EOTP', 'CP', 'Action', 'Ligne', 'Quantité', 'Catégorie', 'Forcé'],
       R.recap.map(r => [r.eotp || 'SANS EOTP', r.cp || '', r.action, r.libelle, fmtQ(r.qty, r.unit), r.categorie, (r.forcedQty || r.forcedCat) ? 'Oui' : '']));
-    tbl('Totaux par EOTP — test ±10 %', ['EOTP', 'CP', 'Pose', 'Dépose', 'Dépose / pose', 'Test ±10 %'],
-      R.eotpTotals.map(e => [e.eotp, e.cp, fmtQ(e.pose, e.unit), fmtQ(e.depose, e.unit), pct(e), !e.renouv ? '—' : e.ok10 === null ? 'après choix AB' : e.ok10 ? 'OK' : 'ÉCART > 10 %']));
+    tbl('Totaux par EOTP — test ±10 %', ['EOTP', 'CP', 'Pose', 'Dépose renouvelée', 'Écart', 'Test ±10 %'],
+      R.eotpTotals.map(e => [e.eotp, e.cp, fmtQ(e.pose, e.unit), fmtQ(e.depose, e.unit), pct(e), !e.renouv ? '—' : e.ok10 ? 'OK' : 'ÉCART > 10 %']));
     tbl('PDR', ['PDR', 'EOTP', 'Nature', 'Catégorie', 'Origine'], R.pdr.map(p => [p.pdr, p.eotp, p.nature, p.categorie, p.auto ? 'détecté SAP' : 'manuel']));
     tbl('Trace des forçages', ['Valeur', 'Auto', 'Forcée', 'Commentaire', 'Date'], forceRows(a));
     doc.addPage(); y = 14;

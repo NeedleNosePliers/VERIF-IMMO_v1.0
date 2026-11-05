@@ -391,6 +391,7 @@
     // 3. calcul par chantier
     const pools = []; // pour le schéma et le choix AB
     const pending = new Set(); // EOTP dont l'AB n'est pas encore réparti
+    const pendingQty = {};      // quantité de dépose encore à basculer en AB, par EOTP de renouvellement
     const byCh = {};
     active.forEach(x => { (byCh[x.chantier || '?'] = byCh[x.chantier || '?'] || []).push(x); });
     for (const ch of Object.keys(byCh)) {
@@ -444,6 +445,7 @@
           }
           const rest = r2(need - chosen);
           if (Math.abs(rest) > EPS) { pending.add(tCP && tCP.eotp); if (tAB) pending.add(tAB.eotp); }
+          if (rest > EPS && tCP && tCP.eotp) pendingQty[tCP.eotp] = (pendingQty[tCP.eotp] || 0) + rest;
           if (Math.abs(rest) > EPS)
             add('orange', rest > 0
               ? `${poolName} : ${fr(rest)} m de dépose à mettre en AB — choisir les tronçons dans l'onglet Tronçons.`
@@ -473,6 +475,7 @@
           else x.alloc.push({ eotp: t.eotp, cp: t.cp, qty: 1 });
         }
         if (chosen !== need) { pending.add(t.eotp); }
+        if (need > chosen && t.eotp) pendingQty[t.eotp] = (pendingQty[t.eotp] || 0) + (need - chosen);
         if (chosen !== need)
           add('orange', chosen < need
             ? `${TYPE_LABEL[role]} : ${(n => `${n} ${role === 'CI' || role === 'CM' ? 'ouvrage' : 'branchement'}${n > 1 ? 's' : ''} déposé${n > 1 ? 's' : ''}`)(need - chosen)} à mettre en AB — cocher les lignes dans l'onglet Tronçons.`
@@ -536,11 +539,16 @@
       e.pose = r2(e.pose); e.depose = r2(e.depose);
       e.renouv = RENEW_CP.includes(e.cp);
       e.pending = pending.has(e.eotp);
-      if (e.renouv && e.pending) e.ok10 = null; // test fait après la répartition de l'AB
-      else if (e.renouv && (e.pose > 0 || e.depose > 0)) {
+      // dépose retenue = dépose affectée moins la part qui doit encore partir en AB (le test ne dépend pas du choix des tronçons)
+      e.deposeAffectee = e.depose;
+      e.abAChoisir = r2(pendingQty[e.eotp] || 0);
+      e.depose = r2(e.depose - e.abAChoisir);
+      // écart = (dépose − pose) / pose
+      e.ecart = e.pose > 0 ? (e.depose - e.pose) / e.pose : (e.depose > 0 ? Infinity : null);
+      if (e.renouv && (e.pose > 0 || e.depose > 0)) {
         e.ok10 = e.depose > 0.9 * e.pose && e.depose < 1.1 * e.pose;
         const q = n => e.unit === 'm' ? `${fr(n)} m` : `${n} ${['27'].includes(e.cp) ? 'ouvrage' : 'branchement'}${n > 1 ? 's' : ''}`;
-        if (!e.ok10) add('rouge', `${e.eotp} (CP ${e.cp}) : écart pose/dépose supérieur à 10 % — pose : ${q(e.pose)}, dépose : ${q(e.depose)}.`, 'eotp:' + e.eotp);
+        if (!e.ok10) add('rouge', `${e.eotp} (CP ${e.cp}) : écart pose/dépose de ${e.ecart === Infinity ? 'plus de 100' : fr(Math.abs(e.ecart) * 100)} % (> 10 %) — pose : ${q(e.pose)}, dépose renouvelée : ${q(e.depose)}.`, 'eotp:' + e.eotp);
       }
       return e;
     }).sort((a, b) => a.eotp.localeCompare(b.eotp));
