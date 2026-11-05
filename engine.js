@@ -494,7 +494,7 @@
       p.cp = pp ? pp.cp : null;
       p.categorie = p.nature === 'Abandon' ? '—' : categorie(p.cp, 'PDR');
     }
-    if (pdr.length) add('info', `${pdr.length} PDR détecté(s) : ${pdr.map(p => p.pdr).join(', ')} (les PDR ne sont pas dans la carto).`);
+    if (pdr.length) add('info', `${pdr.length} PDR détecté(s) : ${pdr.map(p => p.pdr).join(', ')}.`);
 
     // 5. récapitulatif des lignes d'immo
     const recapMap = {};
