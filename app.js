@@ -1,7 +1,7 @@
 /* VERIF-IMMO — interface. Tout est traité localement dans le navigateur. */
 (function () {
   'use strict';
-  const VERSION = '1.1';
+  const VERSION = '1.2';
   const APPNAME = 'VERIF-IMMO';
   const E = window.VIEngine;
   const STORE_KEY = 'verifimmo.v1';
@@ -23,7 +23,7 @@
   }
   function save() {
     try { localStorage.setItem(STORE_KEY, JSON.stringify(db)); storageOk = true; }
-    catch (e) { storageOk = false; toast("Sauvegarde dans le navigateur impossible : pense à exporter l'affaire (fichier)."); }
+    catch (e) { storageOk = false; toast("Sauvegarde dans le navigateur impossible : pensez à exporter l'affaire (fichier)."); }
   }
   load();
 
@@ -195,7 +195,7 @@
       }
       a.eotpVerified = false;
       ui.ocr = null; touch(a); render();
-      toast(`${added} EOTP ajouté(s). Vérifie la liste puis coche « Liste vérifiée ».`);
+      toast(`${added} EOTP ajouté(s). Vérifiez la liste puis cochez « Liste vérifiée ».`);
     } catch (e) {
       console.error(e); ui.ocr = null; render(); toast('Lecture impossible : ' + e.message);
     }
@@ -227,12 +227,12 @@
         <button class="btn sm danger" data-del="${a.id}">Supprimer</button></div>`;
     }).join('');
     return `<h1>Mes affaires</h1>
-      ${storageOk ? '' : '<div class="ctl orange"><span class="lv">Attention</span><span>La sauvegarde du navigateur est indisponible (navigation privée ?). Exporte tes affaires en fichier.</span></div>'}
+      ${storageOk ? '' : '<div class="ctl orange"><span class="lv">Attention</span><span>La sauvegarde du navigateur est indisponible (navigation privée ?). Exportez vos affaires en fichier.</span></div>'}
       <div class="card"><div class="row">
         <button class="btn" id="newAff">+ Nouvelle affaire</button>
         <label class="btn sec" style="cursor:pointer">Importer une affaire (.json)<input type="file" id="impAff" accept=".json,application/json" hidden></label>
       </div>
-      <p class="small muted" style="margin-top:10px">Les affaires sont enregistrées dans ce navigateur, sur cet appareil uniquement. Utilise « Exporter » pour les mettre en sécurité, les passer du PC au téléphone ou les transmettre à un autre CA.</p></div>
+      <p class="small muted" style="margin-top:10px">Les affaires sont enregistrées dans ce navigateur, sur cet appareil uniquement. Utilisez « Exporter » pour les mettre en sécurité, les passer du PC au téléphone ou les transmettre à un autre CA.</p></div>
       <div class="alist">${items || '<p class="muted">Aucune affaire pour l\'instant.</p>'}</div>`;
   }
 
@@ -273,7 +273,7 @@
   }
   function renderFichiers(a) {
     return `<div class="card"><h2>Fichiers carto « G Canalisation »</h2>
-      <p class="muted small">Glisse ici les deux fichiers Excel envoyés par la carto (pose et dépose), sans les ouvrir. L'appli reconnaît la pose et la dépose d'après le nom du fichier (IMMO_POSE / IMMO_DEPOSE) ou son contenu.</p>
+      <p class="muted small">Glissez ici les deux fichiers Excel envoyés par la carto (pose et dépose), sans les ouvrir. L'appli reconnaît la pose et la dépose d'après le nom du fichier (IMMO_POSE / IMMO_DEPOSE) ou son contenu.</p>
       <label class="drop" id="dropCarto"><b>Déposer les fichiers .xlsm / .xlsx ici</b><br><span class="small">ou cliquer pour les choisir</span>
         <input type="file" id="inCarto" accept=".xlsx,.xlsm,.xls" multiple hidden></label>
       <div class="row" style="margin-top:12px;align-items:stretch">${fileCard(a.pose, 'pose')}${fileCard(a.depose, 'depose')}</div></div>
@@ -295,14 +295,14 @@
       <div class="thumbs">${ui.ocr.thumbs.map(u => `<img src="${u}" alt="capture">`).join('')}</div>
       <p class="small muted">La première lecture charge le moteur (quelques secondes). Tout se passe sur cet appareil.</p></div>` : '';
     return `<div class="card"><h2>Liste des EOTP de l'affaire (SAP)</h2>
-      <p class="muted small">Dans SAP, onglet « Donn. base » de la structure du projet : fais une capture d'écran (colonnes « Élément d'OTP » et « Désignation » entières). Plusieurs captures possibles si la liste est longue. Sur PC : <b>Win + Maj + S</b> puis <b>Ctrl + V</b> ici.</p>
+      <p class="muted small">Dans SAP, onglet « Donn. base » de la structure du projet : faites une capture d'écran (colonnes « Élément d'OTP » et « Désignation » entières). Plusieurs captures possibles si la liste est longue. Sur PC : <b>Win + Maj + S</b> puis <b>Ctrl + V</b> ici.</p>
       <label class="drop" id="dropImg"><b>Déposer / coller les captures d'écran ici</b><br><span class="small">ou cliquer pour choisir (photos sur téléphone)</span>
         <input type="file" id="inImg" accept="image/*" multiple hidden></label></div>
       ${ocr}
       <div class="card"><div class="row"><h2 class="grow" style="margin:0">Vérification (${a.eotps.length} lignes)</h2>
         <button class="btn sm sec" id="eotpAdd">+ Ajouter une ligne</button>
         ${a.eotps.length ? '<button class="btn sm danger" id="eotpClear">Vider la liste</button>' : ''}</div>
-      <p class="small muted">Les lignes sont dans le même ordre que dans SAP. Compare chaque ligne avec l'écran SAP et corrige si besoin (+ insère une ligne en dessous, ↑ ↓ déplacent). Les EOTP sont toujours écrits en entier (ex : RV4-0000000-1-C1-22-I01).</p>
+      <p class="small muted">Les lignes sont dans le même ordre que dans SAP. Comparez chaque ligne avec l'écran SAP et corrigez si besoin (+ insère une ligne en dessous, ↑ ↓ déplacent). Les EOTP sont toujours écrits en entier (ex : RV4-0000000-1-C1-22-I01).</p>
       ${a.eotps.length ? `<div class="tw"><table><thead><tr><th>Élément d'OTP</th><th>Désignation</th><th>Niveau</th><th>CP</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
       <label class="row" style="margin-top:12px;font-weight:600;cursor:pointer"><input type="checkbox" id="eotpOk" ${a.eotpVerified ? 'checked' : ''} style="width:20px;height:20px"> Liste vérifiée par rapport à SAP</label>` : '<p class="muted">Aucun EOTP pour l\'instant.</p>'}
       </div>${a.eotps.length ? '<div class="row"><button class="btn" data-tab="resultat">Voir le résultat →</button></div>' : ''}`;
@@ -313,7 +313,7 @@
   function eotpOptions(R) { return [['', '(automatique)']].concat(R.elements.map(e => [e.code, e.code + ' — ' + (e.designation || '')])); }
 
   function renderSchema(R) {
-    if (!R.pools.length) return '<p class="muted">Charge les fichiers carto pour voir le schéma.</p>';
+    if (!R.pools.length) return '<p class="muted">Chargez les fichiers carto pour voir le schéma.</p>';
     const W = 340, bh = 26;
     const C = { c23: getCss('--c23'), c22: getCss('--c22'), cab: getCss('--cab'), pend: getCss('--cpend'), cbr: getCss('--cbr') };
     const cards = R.pools.map(p => {
@@ -356,12 +356,12 @@
     return `<div class="schema">${cards}</div>
       <div class="legend"><span><i style="background:var(--c23)"></i>CP 23 tubage</span><span><i style="background:var(--c22)"></i>CP 22 hors tubage</span>
       <span><i style="background:var(--cbr)"></i>Branchements (CP 25 / 26)</span><span><i style="background:var(--cab)"></i>AB abandon</span><span><i style="background:var(--cpend)"></i>AB à choisir</span>
-      <span>· Ce n'est pas un plan : barres proportionnelles aux longueurs. Clique sur une barre pour voir les tronçons.</span></div>`;
+      <span>· Ce n'est pas un plan : barres proportionnelles aux longueurs. Cliquez sur une barre pour voir les tronçons.</span></div>`;
   }
   function getCss(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim() || '#888'; }
 
   function renderResultat(a, R) {
-    if (!a.pose && !a.depose) return `<div class="card"><p>Commence par charger les fichiers carto.</p><button class="btn" data-tab="fichiers">Charger les fichiers</button></div>`;
+    if (!a.pose && !a.depose) return `<div class="card"><p>Commencez par charger les fichiers carto.</p><button class="btn" data-tab="fichiers">Charger les fichiers</button></div>`;
     const vk = 'VERDICT';
     forceSpecs[vk] = { key: vk, label: 'Verdict global du contrôle', auto: R.autoVerdict, type: 'select', options: [['VALIDATION OK', 'VALIDATION OK'], ['ÉCARTS À CORRIGER', 'ÉCARTS À CORRIGER']] };
     const ok = R.verdict === 'VALIDATION OK';
@@ -462,7 +462,7 @@
       return `<div class="tw"><table><thead><tr><th class="num">Ligne</th><th>Id SIG</th><th>Fonction réseau</th><th>Type</th><th>Matière</th><th class="num">Ø ext.</th><th>IN</th><th>Année</th><th class="num">Long. inst.</th><th class="num">Long. SIG</th><th>Tubage</th><th>EOTP affecté(s)</th><th>${kind === 'depose' ? 'Choix AB' : 'Surplus tubage'}</th><th>Brt PDR</th><th>Ignorer</th><th>Commentaire carto</th></tr></thead><tbody>${rows}</tbody></table></div>`;
     };
     return `${pending.length ? `<div class="card">${pending.map(c => `<div class="ctl orange"><span class="lv">à faire</span><span>${esc(c.msg)}</span></div>`).join('')}
-        <p class="small muted">Choisis, dans le tableau Dépose (colonne « Choix AB »), les tronçons ou la part de tronçon qui partent en abandon.</p></div>` : ''}
+        <p class="small muted">Choisissez, dans le tableau Dépose (colonne « Choix AB »), les tronçons ou la part de tronçon qui partent en abandon.</p></div>` : ''}
       ${f ? `<div class="filterbar"><span>Filtre : ${esc(describeFilter(f))}</span><button class="btn sm sec" id="clrFilter">Tout afficher</button></div>` : ''}
       <div class="card"><h2>Pose <span class="small muted">(${esc(a.pose ? a.pose.fileName : 'aucun fichier')})</span></h2>${a.pose ? table('pose') : '<p class="muted">—</p>'}</div>
       <div class="card"><h2>Dépose <span class="small muted">(${esc(a.depose ? a.depose.fileName : 'aucun fichier')})</span></h2>${a.depose ? table('depose') : '<p class="muted">—</p>'}</div>
@@ -527,7 +527,7 @@
     document.querySelectorAll('[data-open]').forEach(b => b.onclick = () => { ui.view = 'affaire'; ui.id = b.dataset.open; ui.tab = 'resultat'; ui.filter = null; const x = cur(); if (x && !(x.pose && x.depose)) ui.tab = 'fichiers'; render(); });
     document.querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
       const x = db.affaires.find(y => y.id === b.dataset.del);
-      confirmBox(`Supprimer l'affaire « ${x.nom} » de ce navigateur ? Pense à l'exporter avant si tu veux la garder.`, () => { db.affaires = db.affaires.filter(y => y.id !== x.id); save(); render(); }, 'Supprimer');
+      confirmBox(`Supprimer l'affaire « ${x.nom} » de ce navigateur ? Pensez à l'exporter avant si vous souhaitez la conserver.`, () => { db.affaires = db.affaires.filter(y => y.id !== x.id); save(); render(); }, 'Supprimer');
     });
     document.querySelectorAll('[data-exp]').forEach(b => b.onclick = () => exportJson(db.affaires.find(y => y.id === b.dataset.exp)));
     const nb = $('#newAff'); if (nb) nb.onclick = newAffaire;
