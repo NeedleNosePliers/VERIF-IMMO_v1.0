@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VERIF-IMMO</title>
+<meta name="description" content="Contrôle des immobilisations à partir des fichiers carto (G Canalisation) et de la liste des EOTP SAP. Traitement 100 % local dans le navigateur.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="logo">VERIF-IMMO</span><span class="ver" id="ver"></span></div>
+  <nav>
+    <button class="nav" data-go="home">Mes affaires</button>
+    <button class="nav" data-go="help">Aide</button>
+  </nav>
+</header>
+<main id="main"></main>
+<div id="modal" class="modal" hidden></div>
+<div id="toast" class="toast" hidden></div>
+<footer class="foot">Traitement 100 % local : aucun fichier ni capture n'est envoyé sur Internet. Les macros des fichiers .xlsm ne sont jamais exécutées.</footer>
+<script src="vendor/xlsx.full.min.js"></script>
+<script src="vendor/jspdf.umd.min.js"></script>
+<script src="vendor/jspdf.plugin.autotable.min.js"></script>
+<script src="vendor/tesseract/tesseract.min.js"></script>
+<script src="engine.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
