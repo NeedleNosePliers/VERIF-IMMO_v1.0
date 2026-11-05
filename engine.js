@@ -69,6 +69,8 @@
     return null;
   }
   const r2 = x => Math.round(x * 100) / 100;
+  const fr = x => r2(x).toLocaleString('fr-FR', { maximumFractionDigits: 2 }); // 24,7
+  const plur = (n, w) => `${n} ${w}${n > 1 ? 's' : ''}`;
   function dateDisp(v) {
     if (v == null || v === '') return '';
     let d = null;
@@ -423,7 +425,7 @@
           if (x.split22 > EPS) x.alloc.push({ eotp: t22.eotp, cp: t22.cp, qty: r2(x.split22), note: 'surplus tubage' });
         }
         if (Math.abs(poseCP23 - R23) > EPS && poseTub.length)
-          add('orange', `Répartition de la pose tubée modifiée : ${r2(poseCP23)} m en CP 23 au lieu de ${r2(R23)} m.`);
+          add('orange', `Répartition de la pose tubée modifiée : ${fr(poseCP23)} m en CP 23 au lieu de ${fr(R23)} m.`);
         for (const x of poseHT) x.alloc.push({ eotp: t22.eotp, cp: t22.cp, qty: r2(x.a.longueur) });
         const P22 = sum(poseHT) + surplus;
         const D_nt = sum(depNT);
@@ -444,8 +446,8 @@
           if (Math.abs(rest) > EPS) { pending.add(tCP && tCP.eotp); if (tAB) pending.add(tAB.eotp); }
           if (Math.abs(rest) > EPS)
             add('orange', rest > 0
-              ? `${poolName} : ${rest} m de dépose à mettre en AB — choisir les tronçons dans l'onglet Tronçons.`
-              : `${poolName} : ${-rest} m de trop mis en AB.`, 'pool:' + ch + ':' + poolName);
+              ? `${poolName} : ${fr(rest)} m de dépose à mettre en AB — choisir les tronçons dans l'onglet Tronçons.`
+              : `${poolName} : ${fr(-rest)} m de trop mis en AB.`, 'pool:' + ch + ':' + poolName);
           return { need: r2(need), chosen: r2(chosen), rest };
         };
         const s23 = deal(depTub, t23, ab23, 'Réseau tubé (CP 23)');
@@ -473,8 +475,8 @@
         if (chosen !== need) { pending.add(t.eotp); }
         if (chosen !== need)
           add('orange', chosen < need
-            ? `${TYPE_LABEL[role]} : ${need - chosen} branchement(s) déposé(s) à mettre en AB — cocher les lignes dans l'onglet Tronçons.`
-            : `${TYPE_LABEL[role]} : ${chosen - need} branchement(s) de trop mis en AB.`, 'pool:' + ch + ':' + role);
+            ? `${TYPE_LABEL[role]} : ${(n => `${n} ${role === 'CI' || role === 'CM' ? 'ouvrage' : 'branchement'}${n > 1 ? 's' : ''} déposé${n > 1 ? 's' : ''}`)(need - chosen)} à mettre en AB — cocher les lignes dans l'onglet Tronçons.`
+            : `${TYPE_LABEL[role]} : ${plur(chosen - need, role === 'CI' || role === 'CM' ? 'ouvrage' : 'branchement')} de trop mis en AB.`, 'pool:' + ch + ':' + role);
         pools.push({ chantier: ch, kind: role, label: TYPE_LABEL[role], unit: 'u', P: P.length, D: D.length, R, AB: need, chosen });
       }
     }
@@ -537,7 +539,7 @@
       if (e.renouv && e.pending) e.ok10 = null; // test fait après la répartition de l'AB
       else if (e.renouv && (e.pose > 0 || e.depose > 0)) {
         e.ok10 = e.depose > 0.9 * e.pose && e.depose < 1.1 * e.pose;
-        const q = n => e.unit === 'm' ? `${String(n).replace('.', ',')} m` : `${n} ${['27'].includes(e.cp) ? 'ouvrage' : 'branchement'}${n > 1 ? 's' : ''}`;
+        const q = n => e.unit === 'm' ? `${fr(n)} m` : `${n} ${['27'].includes(e.cp) ? 'ouvrage' : 'branchement'}${n > 1 ? 's' : ''}`;
         if (!e.ok10) add('rouge', `${e.eotp} (CP ${e.cp}) : écart pose/dépose supérieur à 10 % — pose : ${q(e.pose)}, dépose : ${q(e.depose)}.`, 'eotp:' + e.eotp);
       }
       return e;
