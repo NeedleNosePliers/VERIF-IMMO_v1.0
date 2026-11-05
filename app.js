@@ -1,7 +1,7 @@
 /* VERIF-IMMO — interface. Tout est traité localement dans le navigateur. */
 (function () {
   'use strict';
-  const VERSION = '1.3';
+  const VERSION = '1.4';
   const APPNAME = 'VERIF-IMMO';
   const E = window.VIEngine;
   const STORE_KEY = 'verifimmo.v1';
@@ -354,8 +354,7 @@
     }).join('');
     return `<div class="schema">${cards}</div>
       <div class="legend"><span><i style="background:var(--c23)"></i>CP 23 tubage</span><span><i style="background:var(--c22)"></i>CP 22 hors tubage</span>
-      <span><i style="background:var(--cbr)"></i>Branchements (CP 25 / 26)</span><span><i style="background:var(--cab)"></i>AB abandon</span><span><i style="background:var(--cpend)"></i>AB à choisir</span>
-      <span>· Ce n'est pas un plan : barres proportionnelles aux longueurs. Cliquez sur une barre pour voir les tronçons.</span></div>`;
+      <span><i style="background:var(--cbr)"></i>Branchements (CP 25 / 26)</span><span><i style="background:var(--cab)"></i>AB abandon</span><span><i style="background:var(--cpend)"></i>AB à choisir</span></div>`;
   }
   function getCss(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim() || '#888'; }
 
@@ -671,7 +670,7 @@
     // schéma simplifié
     let y = 50;
     const colors = { c23: [0, 94, 184], c22: [42, 157, 143], ab: [138, 150, 163], pend: [224, 123, 0], br: [91, 170, 45] };
-    doc.setFontSize(10); doc.text('Schéma (barres proportionnelles aux quantités, ce n\'est pas un plan)', 10, y); y += 4;
+    doc.setFontSize(10); doc.text('Schéma', 10, y); y += 4;
     for (const p of R.pools) {
       let dep, pos;
       if (p.kind === 'RES') {
