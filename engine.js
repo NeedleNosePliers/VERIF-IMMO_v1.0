@@ -18,7 +18,7 @@
 
   // Rôle abandon -> reconnaissance de l'élément AB par sa désignation
   const AB_ROLE = {
-    RES: { label: 'AB réseau', re: /r[ée]seau|\bABD\b/i },
+    RES: { label: 'AB réseau', re: /r[ée]seau|\bABD\b|canalisation|\bcana\b|conduite(?! montante| d.immeuble)/i },
     BI: { label: 'AB branchement individuel', re: /individuel|\bindiv/i },
     BC: { label: 'AB branchement collectif', re: /collectif|\bcollect/i },
     CI: { label: 'AB CI', re: /^\s*CI\b|conduite d.immeuble/i },
@@ -349,7 +349,7 @@
     }
     function findAB(chantier, role) {
       const c = elements.filter(e => e.p.cp === 'AB' && (!chantier || e.p.chantier === chantier) && AB_ROLE[role].re.test(e.designation || ''));
-      const c2 = role === 'RES' ? c.filter(x => !/individuel|collectif|PDR|poste/i.test(x.designation)) : c;
+      const c2 = role === 'RES' ? c.filter(x => !/individuel|collectif|PDR|poste|\bCI\b|\bCM\b|montante|immeuble/i.test(x.designation)) : c;
       const pick = c2.length ? c2 : c;
       return { cp: 'AB', eotp: pick.length ? pick[0].code : null, multiple: pick.length > 1, all: pick.map(x => x.code), label: AB_ROLE[role].label };
     }
@@ -487,8 +487,11 @@
     // 4. PDR : détectés dans les désignations SAP + ajouts manuels
     const pdr = [];
     for (const e of elements) {
-      const m = String(e.designation || '').match(/D\d{5}-PDR\d{5}/i);
-      if (m) pdr.push({ key: 'auto:' + e.code, pdr: m[0].toUpperCase(), eotp: e.code, nature: e.p.cp === 'AB' ? 'Abandon' : 'Pose', auto: true });
+      const des = String(e.designation || '');
+      const m = des.match(/D\d{5}-PDR\d{5}/i);
+      // poste reconnu par son n° (D00000-PDR00000) ou, à défaut, par le mot « poste » / « PDR » dans la désignation
+      const isPoste = m || /\bposte\b|\bPDR\b/i.test(des);
+      if (isPoste) pdr.push({ key: 'auto:' + e.code, pdr: m ? m[0].toUpperCase() : 'n° non indiqué (' + des.replace(/\(abandon\)/i, '').trim() + ')', eotp: e.code, nature: e.p.cp === 'AB' ? 'Abandon' : 'Pose', auto: true, sansNumero: !m });
     }
     for (const p of (state.pdrManual || [])) pdr.push({ key: 'man:' + p.id, pdr: p.pdr, eotp: p.eotp, nature: p.nature, auto: false, id: p.id });
     for (const p of pdr) {
