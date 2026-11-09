@@ -1,7 +1,7 @@
 /* VERIF-IMMO — interface. Tout est traité localement dans le navigateur. */
 (function () {
   'use strict';
-  const VERSION = '2.4';
+  const VERSION = '2.5';
   const APPNAME = 'VERIF-IMMO';
   const E = window.VIEngine;
   const STORE_KEY = 'verifimmo.v1';

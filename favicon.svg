@@ -1,9 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="pe" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffe680"/>
+      <stop offset=".45" stop-color="#ffcc00"/>
+      <stop offset="1" stop-color="#d9a400"/>
+    </linearGradient>
+  </defs>
   <rect width="64" height="64" rx="14" fill="#005eb8"/>
-  <rect x="8" y="34" width="40" height="12" rx="6" fill="#fff"/>
-  <rect x="8" y="34" width="40" height="12" rx="6" fill="none" stroke="#cfe0f3" stroke-width="2"/>
-  <line x1="22" y1="34" x2="22" y2="46" stroke="#005eb8" stroke-width="2.5"/>
-  <line x1="34" y1="34" x2="34" y2="46" stroke="#005eb8" stroke-width="2.5"/>
-  <circle cx="44" cy="20" r="13" fill="#5baa2d"/>
-  <path d="M37.5 20.5l4.5 4.5 8.5-9" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- canalisation PE gaz jaune, vue en perspective -->
+  <rect x="4" y="33" width="44" height="20" fill="url(#pe)"/>
+  <ellipse cx="4" cy="43" rx="4" ry="10" fill="#d9a400"/>
+  <!-- manchon électrosoudable -->
+  <rect x="20" y="31" width="9" height="24" rx="2" fill="#f2f2f2" stroke="#b9c3cc" stroke-width="1"/>
+  <!-- extrémité ouverte : paroi jaune et intérieur sombre -->
+  <ellipse cx="48" cy="43" rx="5" ry="10" fill="#ffcc00" stroke="#c99700" stroke-width="1"/>
+  <ellipse cx="48" cy="43" rx="3.2" ry="7" fill="#3a2f00"/>
+  <!-- contrôle validé -->
+  <circle cx="45" cy="18" r="12.5" fill="#5baa2d" stroke="#fff" stroke-width="2"/>
+  <path d="M38.8 18.4l4.3 4.3 8.1-8.6" fill="none" stroke="#fff" stroke-width="3.8" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
