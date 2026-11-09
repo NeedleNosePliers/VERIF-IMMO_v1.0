@@ -19,10 +19,11 @@ Tout est traité **dans le navigateur** : aucun fichier ni capture n'est envoyé
 | `style.css` | présentation (couleurs dans `:root`) |
 | `app.js` | interface, sauvegarde, OCR, exports — contient le numéro de version (`VERSION`) |
 | `engine.js` | règles métier et calculs |
+| `sw.js` | fonctionnement hors ligne (enregistre l'appli sur l'appareil) |
 | `vendor/` | bibliothèques embarquées : SheetJS (Excel), jsPDF + AutoTable (PDF), Tesseract.js + données « fra » (OCR) |
 
 ## Version
-Le numéro affiché vient de `const VERSION = '1.0'` dans `app.js` : l'incrémenter à chaque modification.
+Le numéro de version est à changer **aux trois endroits** à chaque modification : `const VERSION` dans `app.js`, `const VERSION` dans `sw.js` (fonctionnement hors ligne) et les `?v=` dans `index.html`.
 
 ## Règles appliquées
 Voir le menu **Aide** de l'appli.

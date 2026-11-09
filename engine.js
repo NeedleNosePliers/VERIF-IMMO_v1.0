@@ -47,6 +47,7 @@
 
   // ---------- Utilitaires ----------
   const EPS = 0.005;
+  const TOL_AB = 1; // m : en dessous, un surplus de dépose n'est pas envoyé en AB (reste sur l'EOTP de renouvellement)
   const norm = s => String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
   const num = v => {
     if (v == null || v === '') return null;
@@ -431,7 +432,12 @@
         const P22 = sum(poseHT) + surplus;
         const D_nt = sum(depNT);
         const R22 = Math.min(P22, D_nt);
-        const ab23 = D_tub - R23, ab22 = D_nt - R22;
+        let ab23 = D_tub - R23, ab22 = D_nt - R22;
+        // tolérance : petit surplus de dépose (< 1 m) laissé sur l'EOTP de renouvellement, sauf si le CA a déjà choisi de l'AB
+        const hasChoice = arr => arr.some(x => +choices.ab[x.uid] > 0);
+        let tol23 = 0, tol22 = 0;
+        if (ab23 > EPS && ab23 < TOL_AB && !hasChoice(depTub)) { tol23 = ab23; ab23 = 0; add('info', `Réseau tubé (CP 23) : écart de ${fr(tol23)} m entre dépose tubée et PE tubé, toléré (moins de ${TOL_AB} m) et laissé en CP 23.`); }
+        if (ab22 > EPS && ab22 < TOL_AB && !hasChoice(depNT)) { tol22 = ab22; ab22 = 0; add('info', `Réseau hors tubage (CP 22) : écart de ${fr(tol22)} m toléré (moins de ${TOL_AB} m) et laissé en CP 22.`); }
         // dépose : le CA choisit les tronçons qui partent en AB
         const deal = (arr, tCP, need, poolName) => {
           let chosen = 0;
@@ -455,7 +461,7 @@
         const s23 = deal(depTub, t23, ab23, 'Réseau tubé (CP 23)');
         const s22 = deal(depNT, t22, ab22, 'Réseau hors tubage (CP 22)');
         pools.push({ chantier: ch, kind: 'RES', label: 'Réseau', unit: 'm',
-          P_tub: r2(P_tub), D_tub: r2(D_tub), R23: r2(R23), P22: r2(P22), D_nt: r2(D_nt), R22: r2(R22),
+          P_tub: r2(P_tub), D_tub: r2(D_tub), R23: r2(R23), P22: r2(P22), D_nt: r2(D_nt), R22: r2(R22), R23dep: r2(R23 + tol23), R22dep: r2(R22 + tol22),
           AB23: r2(ab23), AB22: r2(ab22), surplusTub: r2(surplus), s23, s22 });
       }
       // ----- Branchements / CI / CM (en nombre) -----
@@ -526,6 +532,8 @@
       r.autoQty = r.qty; r.autoCat = r.categorie;
       const kq = `R:${r.key}:qte`, kc = `R:${r.key}:cat`;
       if (forces[kq]) { r.qty = +forces[kq].value; r.forcedQty = true; }
+      // quantité à saisir dans SAP : mètres arrondis à l'unité supérieure (valeur forcée reprise telle quelle)
+      r.qtySAP = (r.unit === 'm' && !r.forcedQty) ? Math.ceil(r.qty - 1e-9) : r.qty;
       if (forces[kc]) { r.categorie = forces[kc].value; r.forcedCat = true; }
       if (!r.eotp) add('rouge', `${r.libelle} (${r.action.toLowerCase()}) : pas d'EOTP — à créer dans SAP ou à forcer.`, 'recap:' + r.key);
       return r;

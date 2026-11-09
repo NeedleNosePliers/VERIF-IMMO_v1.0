@@ -1,7 +1,7 @@
 /* VERIF-IMMO — interface. Tout est traité localement dans le navigateur. */
 (function () {
   'use strict';
-  const VERSION = '2.3';
+  const VERSION = '2.4';
   const APPNAME = 'VERIF-IMMO';
   const E = window.VIEngine;
   const STORE_KEY = 'verifimmo.v1';
@@ -320,10 +320,10 @@
       let dep, pos, unit = p.unit === 'm' ? ' m' : '';
       if (p.kind === 'RES') {
         dep = [
-          { v: p.R23, c: C.c23, l: 'CP 23 renouv.', f: { kind: 'depose', type: 'RES', tub: true } },
+          { v: p.R23dep ?? p.R23, c: C.c23, l: 'CP 23 renouv.', f: { kind: 'depose', type: 'RES', tub: true } },
           { v: p.AB23 - Math.max(0, p.s23.rest), c: C.cab, l: 'AB', f: { kind: 'depose', type: 'RES', tub: true, ab: true } },
           { v: Math.max(0, p.s23.rest), c: C.pend, l: 'AB à choisir', f: { kind: 'depose', type: 'RES', tub: true } },
-          { v: p.R22, c: C.c22, l: 'CP 22 renouv.', f: { kind: 'depose', type: 'RES', tub: false } },
+          { v: p.R22dep ?? p.R22, c: C.c22, l: 'CP 22 renouv.', f: { kind: 'depose', type: 'RES', tub: false } },
           { v: p.AB22 - Math.max(0, p.s22.rest), c: C.cab, l: 'AB', f: { kind: 'depose', type: 'RES', tub: false, ab: true } },
           { v: Math.max(0, p.s22.rest), c: C.pend, l: 'AB à choisir', f: { kind: 'depose', type: 'RES', tub: false } }];
         pos = [
@@ -375,7 +375,7 @@
       return `<tr><td>${r.eotp ? esc(r.eotp) : '<span class="pill none">sans EOTP</span>'}</td><td><span class="pill ${CPCLS(r.cp)}">${esc(r.cp || '?')}</span></td>
         <td>${r.action === 'POSE' ? '<span class="tag pose">POSE</span>' : '<span class="tag depose">DÉPOSE</span>'}</td>
         <td>${esc(r.libelle)}${r.brtPDR ? ' <span class="pill">Brt PDR</span>' : ''}</td>
-        <td class="num">${fcell(kq, fmtQ(r.qty, r.unit), fmtQ(r.autoQty, r.unit))}</td>
+        <td class="num">${fcell(kq, fmtQ(r.qtySAP, r.unit), fmtQ(r.autoQty, r.unit))}${r.unit === 'm' && r.qtySAP !== r.qty ? `<div class="small muted">exact : ${fmtQ(r.qty, r.unit)}</div>` : ''}</td>
         <td>${fcell(kc, r.categorie, r.autoCat)}</td><td class="num">${r.lines.length}</td></tr>`;
     }).join('');
     const tot = R.eotpTotals.map(e => `<tr><td>${esc(e.eotp)}</td><td><span class="pill ${CPCLS(e.cp)}">${esc(e.cp)}</span></td>
@@ -396,13 +396,12 @@
       <div class="card" style="margin-top:14px"><h2>Schéma de l'affaire</h2>${renderSchema(R)}</div>
       <div class="card"><h2>Contrôles</h2>${ctls || '<p class="muted">Aucun point à signaler.</p>'}</div>
       <div class="card"><h2>Lignes d'immo à saisir dans SAP</h2>
-        <p class="small muted">Regroupées par EOTP, action, type, matière, classe IN, année et INSEE (comme VERIF_IMMO). Longueurs = longueur installée. Les quantités et catégories sont forçables (✎).</p>
-        <div class="tw"><table><thead><tr><th>EOTP</th><th>CP</th><th>Action</th><th>Ligne</th><th class="num">Quantité</th><th>Catégorie</th><th class="num">Tronçons</th></tr></thead><tbody>${rec || '<tr><td colspan="7" class="muted">—</td></tr>'}</tbody></table></div></div>
+        <p class="small muted">Regroupées par EOTP, action, type, matière, classe IN, année et INSEE (comme VERIF_IMMO). Longueurs = longueur installée, arrondies au mètre supérieur pour la saisie SAP. Les quantités et catégories sont forçables (✎).</p>
+        <div class="tw"><table><thead><tr><th>EOTP</th><th>CP</th><th>Action</th><th>Ligne</th><th class="num">Quantité à saisir</th><th>Catégorie</th><th class="num">Tronçons</th></tr></thead><tbody>${rec || '<tr><td colspan="7" class="muted">—</td></tr>'}</tbody></table></div></div>
       <div class="card"><h2>Totaux par EOTP et test ±10 %</h2>
         <p class="small muted">Sur les EOTP de renouvellement (CP 17, 18, 20, 21, 22, 23, 25, 26, 27), écart = (dépose renouvelée − pose) / pose, à garder entre −10 % et +10 %. La dépose renouvelée ne compte pas la part qui doit partir en AB.</p>
         <div class="tw"><table><thead><tr><th>EOTP</th><th>CP</th><th class="num">Pose</th><th class="num">Dépose renouvelée</th><th class="num">Écart</th><th>Test ±10 %</th></tr></thead><tbody>${tot || '<tr><td colspan="6" class="muted">—</td></tr>'}</tbody></table></div></div>
       <div class="card"><div class="row"><h2 class="grow" style="margin:0">PDR</h2><button class="btn sm sec" id="pdrAdd">+ Ajouter un PDR</button></div>
-        <p class="small muted">Les PDR ne figurent pas dans la carto : ils sont détectés dans les désignations SAP (ex : « … : D00000-PDR00000 »).</p>
         ${R.pdr.length ? `<div class="tw"><table><thead><tr><th>PDR</th><th>EOTP</th><th>Nature</th><th>Catégorie</th><th>Origine</th></tr></thead><tbody>${pdrRows}</tbody></table></div>` : '<p class="muted">Aucun PDR.</p>'}</div>`;
   }
 
@@ -508,6 +507,8 @@
       <li><b>CP 23</b> = la plus petite longueur entre le PE posé en tubage et la dépose tubée. Le surplus de dépose tubée part en <b>AB</b>, le surplus de PE tubé part en <b>CP 22</b>.</li>
       <li><b>CP 22</b> = toute la pose restante (hors tubage + surplus de tubage). En face : la dépose non tubée, à concurrence de cette pose. Le reste de la dépose part en <b>AB</b>.</li>
       <li>Les tronçons qui partent en AB sont <b>choisis par le CA</b> (onglet Tronçons). Le CP 15 n'est jamais choisi automatiquement : il reste disponible par forçage.</li>
+      <li>Tolérance : un surplus de dépose de <b>moins de 1 m</b> n'est pas envoyé en AB ; il reste sur l'EOTP de renouvellement (sauf si le CA choisit de l'AB).</li>
+      <li>Quantités à saisir dans SAP : mètres <b>arrondis à l'unité supérieure</b> (ex : 15,6 m → 16 m).</li>
       <li>Longueur retenue : <b>longueur installée</b>. Classes : IN1 &lt; 80 mm ; IN2 de 80 à &lt; 200 mm ; IN3 ≥ 200 mm (diamètre externe).</li></ol>
       <h3>Branchements</h3><ul><li>Une ligne carto = un branchement. Individuel (courant, GC) → CP 25 ; collectif → CP 26. Renouvelés = le plus petit nombre entre pose et dépose ; le surplus de dépose part en AB (lignes cochées par le CA). Le tubage ne s'applique qu'au réseau.</li></ul>
       <h3>Fonte grise</h3><ul><li>Si la structure SAP contient les CP 17, 18, 20 ou 21 à la place de 22, 23, 25 ou 26, l'appli les utilise.</li></ul>
@@ -518,6 +519,7 @@
       <li><b>EOTP A EXCLURE</b> (information) : EOTP de la structure sans aucun tronçon affecté.</li></ul>
       <h3>Catégories d'immo</h3><p class="small">CP 03 M10E · 04 P21E · 05 P23E · 06 / 27 P25E (CI) – P24E (CM) · 11 P26E (BREU) – P27E (CIEU) · 15 et 22 M10E (cana) – P21E (Brt PDR) – S31E (PDR) · 16 M10E · 17 / 18 / 23 M10E · 20 / 25 P21E · 21 / 26 P23E · 35 S63E. Sources : tableau des catégories de l'agence ; doc. M-GES-08/11X – M-RES-08/30X p. 18-19 (codes plans) et p. 27-28 (catégories).</p>
       <h3>Forçage</h3><ul><li>Toute valeur calculée peut être forcée (✎) avec un commentaire. Les valeurs forcées sont surlignées en violet, ne sont jamais écrasées par un recalcul et figurent dans la trace et les exports.</li></ul>
+      <h3>Hors ligne</h3><ul><li>Après une première ouverture avec réseau, l'appli est enregistrée sur l'appareil et fonctionne sans connexion, lecture des captures comprise. Les mises à jour sont récupérées automatiquement au retour du réseau.</li></ul>
       <h3>Confidentialité</h3><ul><li>Tout est traité sur l'appareil : aucun fichier, aucune capture n'est envoyé sur Internet. Les affaires sont enregistrées dans ce navigateur ; exporter en .json pour les conserver ailleurs.</li></ul>
       <button class="btn" data-go="home">Retour à mes affaires</button></div>`;
   }
@@ -643,8 +645,8 @@
     const add = (name, aoa, widths) => { const ws = XLSX.utils.aoa_to_sheet(aoa); if (widths) ws['!cols'] = widths.map(w => ({ wch: w })); XLSX.utils.book_append_sheet(wb, ws, name); };
     add('Synthèse', [[APPNAME + ' Ver.' + VERSION], ['Affaire', a.nom], ['Édité le', nowStr()], ['Fichier pose', a.pose ? a.pose.fileName : ''], ['Fichier dépose', a.depose ? a.depose.fileName : ''],
       ['Verdict', R.verdict + (a.forces.VERDICT ? ' (forcé, auto : ' + R.autoVerdict + ')' : '')], [], ['Niveau', 'Contrôle'], ...R.controls.map(c => [c.level, c.msg])], [18, 120]);
-    add("Lignes d'immo", [['EOTP', 'CP', 'Action', 'Ligne', 'Quantité', 'Unité', 'Catégorie', 'Forcé', 'Nb tronçons'],
-      ...R.recap.map(r => [r.eotp, r.cp, r.action, r.libelle, r.qty, r.unit === 'm' ? 'm' : 'nb', r.categorie, (r.forcedQty || r.forcedCat) ? 'Oui' : '', r.lines.length])], [28, 5, 8, 36, 10, 6, 12, 7, 10]);
+    add("Lignes d'immo", [['EOTP', 'CP', 'Action', 'Ligne', 'Quantité à saisir', 'Quantité exacte', 'Unité', 'Catégorie', 'Forcé', 'Nb tronçons'],
+      ...R.recap.map(r => [r.eotp, r.cp, r.action, r.libelle, r.qtySAP, r.qty, r.unit === 'm' ? 'm' : 'nb', r.categorie, (r.forcedQty || r.forcedCat) ? 'Oui' : '', r.lines.length])], [28, 5, 8, 36, 12, 12, 6, 12, 7, 10]);
     add('Totaux EOTP', [['EOTP', 'CP', 'Pose', 'Dépose renouvelée', 'Unité', 'Écart', 'Test ±10 %'],
       ...R.eotpTotals.map(e => [e.eotp, e.cp, e.pose, e.depose, e.unit === 'm' ? 'm' : 'nb', pct(e), !e.renouv ? '—' : e.ok10 ? 'OK' : 'ÉCART > 10 %'])], [28, 5, 10, 10, 6, 13, 14]);
     add('PDR', [['PDR', 'EOTP', 'Nature', 'Catégorie', 'Origine'], ...R.pdr.map(p => [p.pdr, p.eotp, p.nature, p.categorie, p.auto ? 'détecté SAP' : 'manuel'])], [18, 28, 10, 10, 12]);
@@ -678,7 +680,7 @@
     for (const p of R.pools) {
       let dep, pos;
       if (p.kind === 'RES') {
-        dep = [[p.R23, 'c23'], [p.AB23 - Math.max(0, p.s23.rest), 'ab'], [Math.max(0, p.s23.rest), 'pend'], [p.R22, 'c22'], [p.AB22 - Math.max(0, p.s22.rest), 'ab'], [Math.max(0, p.s22.rest), 'pend']];
+        dep = [[p.R23dep ?? p.R23, 'c23'], [p.AB23 - Math.max(0, p.s23.rest), 'ab'], [Math.max(0, p.s23.rest), 'pend'], [p.R22dep ?? p.R22, 'c22'], [p.AB22 - Math.max(0, p.s22.rest), 'ab'], [Math.max(0, p.s22.rest), 'pend']];
         pos = [[p.R23, 'c23'], [p.surplusTub, 'c22'], [p.P22 - p.surplusTub, 'c22']];
       } else {
         dep = [[p.D - p.AB, 'br'], [Math.min(p.chosen, p.AB), 'ab'], [Math.max(0, p.AB - p.chosen), 'pend']];
@@ -706,7 +708,7 @@
     };
     tbl('Contrôles', ['Niveau', 'Contrôle'], R.controls.map(c => [c.level.toUpperCase(), c.msg]), { columnStyles: { 0: { cellWidth: 18 } } });
     tbl("Lignes d'immo à saisir dans SAP", ['EOTP', 'CP', 'Action', 'Ligne', 'Quantité', 'Catégorie', 'Forcé'],
-      R.recap.map(r => [r.eotp || 'SANS EOTP', r.cp || '', r.action, r.libelle, fmtQ(r.qty, r.unit), r.categorie, (r.forcedQty || r.forcedCat) ? 'Oui' : '']));
+      R.recap.map(r => [r.eotp || 'SANS EOTP', r.cp || '', r.action, r.libelle, fmtQ(r.qtySAP, r.unit) + (r.unit === 'm' && r.qtySAP !== r.qty ? ` (${fmtQ(r.qty, r.unit)})` : ''), r.categorie, (r.forcedQty || r.forcedCat) ? 'Oui' : '']));
     tbl('Totaux par EOTP — test ±10 %', ['EOTP', 'CP', 'Pose', 'Dépose renouvelée', 'Écart', 'Test ±10 %'],
       R.eotpTotals.map(e => [e.eotp, e.cp, fmtQ(e.pose, e.unit), fmtQ(e.depose, e.unit), pct(e), !e.renouv ? '—' : e.ok10 ? 'OK' : 'ÉCART > 10 %']));
     tbl('PDR', ['PDR', 'EOTP', 'Nature', 'Catégorie', 'Origine'], R.pdr.map(p => [p.pdr, p.eotp, p.nature, p.categorie, p.auto ? 'détecté SAP' : 'manuel']));
@@ -720,4 +722,8 @@
   }
 
   render();
+  // fonctionnement hors ligne : enregistre l'appli sur l'appareil (https ou localhost uniquement)
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+    navigator.serviceWorker.register('sw.js').catch(e => console.warn('Hors ligne indisponible :', e));
+  }
 })();
