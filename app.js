@@ -1,7 +1,7 @@
 /* VERIF-IMMO — interface. Tout est traité localement dans le navigateur. */
 (function () {
   'use strict';
-  const VERSION = '3.2';
+  const VERSION = '4.0';
   const APPNAME = 'VERIF-IMMO';
   const E = window.VIEngine;
   const STORE_KEY = 'verifimmo.v1';
@@ -268,8 +268,8 @@
     const tabs = [
       ['fichiers', '1. Fichiers carto', (a.pose && a.depose) ? 'ok' : 'rouge'],
       ['eotp', '2. Captures SAP', a.eotps.length ? ((a.eotpVerified !== false && a.orcVerified !== false) ? 'ok' : 'orange') : 'rouge'],
-      ['resultat', '3. Résultat', R ? (lv('rouge') ? 'rouge' : lv('orange') ? 'orange' : 'ok') : ''],
-      ['troncons', '4. Tronçons', R && R.controls.some(c => c.level === 'orange' && /AB/.test(c.msg)) ? 'orange' : ''],
+      ['resultat', '3. Répartition', R ? (lv('rouge') ? 'rouge' : lv('orange') ? 'orange' : 'ok') : ''],
+      ['troncons', '4. Tronçons', ''],
       ['export', '5. Forçages & export', '']
     ];
     let body = '';
@@ -352,41 +352,48 @@
     const u = x => x.unit === 'M' ? ' m' : '';
     const p = R.orc.pose.map(x => `<tr><td>${esc(x.eotp)}</td><td>${esc(x.nat || '')}</td><td class="num">${x.prev == null ? '—' : fmt(x.prev) + u(x)}</td><td class="num">${x.reel == null ? '—' : fmt(x.reel) + u(x)}</td><td class="num"><b>${fmt(x.app)}${u(x)}</b></td><td>${st(x)}</td></tr>`).join('');
     const d = R.orc.depose.map(x => `<tr><td>${esc(x.eotp)}</td><td class="wrap">${esc(x.designation || '')}</td><td>${esc(x.mat || '')}</td><td>${esc(x.IN || '')}</td><td>${esc(x.annee || '')}</td><td class="num">${x.prev == null ? '—' : fmt(x.prev) + u(x)}</td><td class="num">${x.reel == null ? '—' : fmt(x.reel) + u(x)}</td><td class="num"><b>${fmt(x.app)}${u(x)}</b></td><td>${st(x)}</td></tr>`).join('');
+    const inv = R.orc.inventaire.map(x => `<tr><td>Réseau ${esc(x.mat)} ${esc(x.IN)} ${esc(x.annee)}</td><td class="num">${x.sap == null ? '—' : fmt(x.sap) + ' m'}</td><td class="num">${fmt(x.carto)} m</td><td>${x.ok ? '<span class="pill" style="background:var(--green-l);color:#2f6b10">identique</span>' : '<span class="pill" style="background:var(--orange-l);color:var(--orange)">différent</span>'}</td></tr>`).join('');
     return `<div class="card"><h2>Comparaison avec l'écran ORC</h2>
-      <p class="small muted">« Qté réelle SAP » = ce qui est saisi dans SAP ; « Proposition » = ce que calcule l'appli à partir de la carto (mètres arrondis au-dessus). INSEE non comparé (la carto donne l'arrondissement, SAP la commune).</p>
+      <p class="small muted">« Qté réelle SAP » = ce qui est saisi dans SAP ; « Proposition » = la répartition ci-dessus. INSEE non comparé (la carto donne l'arrondissement, SAP la commune).</p>
+      ${inv ? `<h3>Quantité des biens : SAP (« Qté prév. dépose ») / carto</h3><div class="tw"><table><thead><tr><th>Bien</th><th class="num">SAP</th><th class="num">Carto</th><th>Statut</th></tr></thead><tbody>${inv}</tbody></table></div>` : ''}
       <h3>Pose par EOTP</h3><div class="tw"><table><thead><tr><th>EOTP</th><th>Nat. ouvr.</th><th class="num">Qté prév.</th><th class="num">Qté réelle SAP</th><th class="num">Proposition</th><th>Statut</th></tr></thead><tbody>${p || '<tr><td colspan="6" class="muted">—</td></tr>'}</tbody></table></div>
       <h3>Dépose / abandon</h3><div class="tw"><table><thead><tr><th>EOTP</th><th>Désignation</th><th>Mat.</th><th>IN</th><th>Année</th><th class="num">Qté prév.</th><th class="num">Qté réelle SAP</th><th class="num">Proposition</th><th>Statut</th></tr></thead><tbody>${d || '<tr><td colspan="9" class="muted">—</td></tr>'}</tbody></table></div></div>`;
   }
 
-  // ----- 3. Résultat -----
+  // ----- 3. Répartition -----
   const CPCLS = cp => cp === '23' || cp === '18' ? 'c23' : cp === 'AB' ? 'cab' : cp ? 'c22' : 'none';
-  function eotpOptions(R) { return [['', '(automatique)']].concat(R.elements.map(e => [e.code, e.code + ' — ' + (e.designation || '')])); }
+  function eotpOptions(R) { return R.elements.map(e => [e.code, e.code + ' — ' + (e.designation || '')]); }
+  const FAM_LABEL = { RES: 'Réseau', BI: 'Branchements individuels', BC: 'Branchements collectifs', CI: 'CI', CM: 'CM' };
+  const colShort = c => { const p = E.parseEotpCode(c); return p ? c.split('-').slice(-2).join('-') : c; };
+  const colColor = (cp, C) => cp === '23' || cp === '18' ? C.c23 : cp === 'AB' ? C.cab : cp === '15' ? '#7a5cc4' : (cp === '25' || cp === '26' || cp === '20' || cp === '21' || cp === '27') ? C.cbr : C.c22;
+  // colonnes d'une famille : pose + dépose de la famille
+  function famCols(R, fam, ch) {
+    const cols = R.cols.filter(c => c.fam === fam && (!ch || !E.parseEotpCode(c.col) || (E.parseEotpCode(c.col).chantier || ch) === ch));
+    const order = c => c.cp === '23' || c.cp === '18' ? 0 : c.cp === '22' || c.cp === '17' ? 1 : c.cp === '15' ? 2 : c.cp === 'AB' ? 9 : 3;
+    return cols.sort((x, y) => order(x) - order(y) || x.col.localeCompare(y.col));
+  }
+  function groups(R) {
+    const g = [];
+    const chs = [...new Set(R.pose.map(p => p.chantier).concat(R.biens.map(b => b.chantier)))];
+    for (const ch of chs) for (const fam of ['RES', 'BI', 'BC', 'CI', 'CM']) {
+      const biens = R.biens.filter(b => b.chantier === ch && b.fam === fam);
+      const pose = R.pose.filter(p => p.chantier === ch && p.fam === fam);
+      if (biens.length || pose.length) g.push({ ch, fam, biens, pose, cols: famCols(R, fam, ch) });
+    }
+    return g;
+  }
 
   function renderSchema(R) {
-    if (!R.pools.length) return '<p class="muted">Chargez les fichiers carto pour voir le schéma.</p>';
+    const G = groups(R);
+    if (!G.length) return '<p class="muted">Chargez les fichiers carto pour voir le schéma.</p>';
     const W = 340, bh = 26;
     const C = { c23: getCss('--c23'), c22: getCss('--c22'), cab: getCss('--cab'), pend: getCss('--cpend'), cbr: getCss('--cbr') };
-    const cards = R.pools.map(p => {
-      let dep, pos, unit = p.unit === 'm' ? ' m' : '';
-      if (p.kind === 'RES') {
-        dep = [
-          { v: p.R23dep ?? p.R23, c: C.c23, l: 'CP 23 renouv.', f: { kind: 'depose', type: 'RES', tub: true } },
-          { v: p.AB23 - Math.max(0, p.s23.rest), c: C.cab, l: 'AB', f: { kind: 'depose', type: 'RES', tub: true, ab: true } },
-          { v: Math.max(0, p.s23.rest), c: C.pend, l: 'AB à choisir', f: { kind: 'depose', type: 'RES', tub: true } },
-          { v: p.R22dep ?? p.R22, c: C.c22, l: 'CP 22 renouv.', f: { kind: 'depose', type: 'RES', tub: false } },
-          { v: p.AB22 - Math.max(0, p.s22.rest), c: C.cab, l: 'AB', f: { kind: 'depose', type: 'RES', tub: false, ab: true } },
-          { v: Math.max(0, p.s22.rest), c: C.pend, l: 'AB à choisir', f: { kind: 'depose', type: 'RES', tub: false } }];
-        pos = [
-          { v: p.R23, c: C.c23, l: 'CP 23 tubage', f: { kind: 'pose', type: 'RES', tub: true } },
-          { v: p.surplusTub, c: C.c22, l: 'surplus tubage → CP 22', f: { kind: 'pose', type: 'RES', tub: true } },
-          { v: p.P22 - p.surplusTub, c: C.c22, l: 'CP 22', f: { kind: 'pose', type: 'RES', tub: false } }];
-      } else {
-        const pend = Math.max(0, p.AB - p.chosen);
-        dep = [{ v: p.D - p.AB, c: C.cbr, l: 'renouv.', f: { kind: 'depose', type: p.kind } },
-          { v: Math.min(p.chosen, p.AB), c: C.cab, l: 'AB', f: { kind: 'depose', type: p.kind, ab: true } },
-          { v: pend, c: C.pend, l: 'AB à choisir', f: { kind: 'depose', type: p.kind } }];
-        pos = [{ v: p.P, c: C.cbr, l: 'posés', f: { kind: 'pose', type: p.kind } }];
-      }
+    const cards = G.map(g => {
+      const unit = g.fam === 'RES' ? ' m' : '';
+      const dep = g.cols.map(c => ({ v: g.biens.reduce((s, b) => s + (+b.cells[c.col] || 0), 0), c: colColor(c.cp, C), l: colShort(c.col), f: { kind: 'depose', fam: g.fam } }));
+      const reste = g.biens.reduce((s, b) => s + Math.max(0, b.reste), 0);
+      if (reste > 0) dep.push({ v: reste, c: C.pend, l: 'reste à répartir', f: { kind: 'depose', fam: g.fam } });
+      const pos = g.cols.map(c => { const p = g.pose.find(x => x.col === c.col); return { v: p ? p.qty : 0, c: colColor(c.cp, C), l: colShort(c.col), f: { kind: 'pose', fam: g.fam } }; });
       const tot = s => s.reduce((t, x) => t + Math.max(0, x.v), 0);
       const max = Math.max(tot(dep), tot(pos), 0.0001);
       const bar = (segs, y) => {
@@ -394,20 +401,64 @@
         return segs.filter(s => s.v > 0.004).map(s => {
           const w = Math.max(2, s.v / max * W);
           const r = `<g class="seg" data-filter='${esc(JSON.stringify(s.f))}'><rect x="${x}" y="${y}" width="${w}" height="${bh}" fill="${s.c}" rx="3"><title>${esc(s.l)} : ${fmt(s.v)}${unit}</title></rect>
-            ${w > 46 ? `<text x="${x + w / 2}" y="${y + 17}" fill="#fff" font-size="11.5" text-anchor="middle" font-weight="600">${fmt(s.v, p.unit === 'm' ? 1 : 0)}${unit}</text>` : ''}</g>`;
+            ${w > 46 ? `<text x="${x + w / 2}" y="${y + 17}" fill="#fff" font-size="11.5" text-anchor="middle" font-weight="600">${fmt(s.v, 1)}${unit}</text>` : ''}</g>`;
           x += w; return r;
         }).join('');
       };
-      const svg = `<svg viewBox="-2 0 ${W + 4} 92" width="100%" style="max-width:560px;display:block" role="img" aria-label="Schéma ${esc(p.label)}">
+      const svg = `<svg viewBox="-2 0 ${W + 4} 92" width="100%" style="max-width:560px;display:block" role="img" aria-label="Schéma ${esc(FAM_LABEL[g.fam])}">
         <text x="0" y="12" font-size="12" fill="#4a5866">Ancien (dépose) : ${fmt(tot(dep))}${unit}</text>${bar(dep, 16)}
         <text x="0" y="60" font-size="12" fill="#4a5866">Nouveau (pose) : ${fmt(tot(pos))}${unit}</text>${bar(pos, 64)}</svg>`;
-      return `<div class="card"><h3 style="margin-top:0">${esc(p.label)}${R.chantiers.length > 1 ? ' — ' + esc(p.chantier) : ''}</h3>${svg}</div>`;
+      const leg = g.cols.map(c => `<span><i style="background:${colColor(c.cp, C)}"></i>${esc(colShort(c.col))}</span>`).join('') + (reste > 0 ? `<span><i style="background:${C.pend}"></i>reste à répartir</span>` : '');
+      return `<div class="card"><h3 style="margin-top:0">${esc(FAM_LABEL[g.fam])}${R.chantiers.length > 1 ? ' — ' + esc(g.ch) : ''}</h3>${svg}<div class="legend">${leg}</div></div>`;
     }).join('');
-    return `<div class="schema">${cards}</div>
-      <div class="legend"><span><i style="background:var(--c23)"></i>CP 23 tubage</span><span><i style="background:var(--c22)"></i>CP 22 hors tubage</span>
-      <span><i style="background:var(--cbr)"></i>Branchements (CP 25 / 26)</span><span><i style="background:var(--cab)"></i>AB abandon</span><span><i style="background:var(--cpend)"></i>AB à choisir</span></div>`;
+    return `<div class="schema">${cards}</div>`;
   }
   function getCss(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim() || '#888'; }
+
+  // tableau de répartition d'une famille (format écran ORC : biens en lignes, EOTP en colonnes)
+  function renderMatrix(a, R, g) {
+    const u = g.fam === 'RES' ? ' m' : '';
+    const orc = R.orc;
+    const colHead = g.cols.map(c => `<th class="num" title="${esc(c.col)}"><span class="pill ${CPCLS(c.cp)}">${esc(c.cp || '?')}</span><br>${esc(colShort(c.col))}${c.toCreate ? '<br><span class="pill none">à créer</span>' : ''}</th>`).join('');
+    const rows = g.biens.map(b => {
+      const cells = g.cols.map(c => {
+        const key = `REP:${b.key}|${c.col}`;
+        const v = b.cells[c.col] ?? 0, auto = b.auto[c.col] ?? 0;
+        const forced = isForced(key);
+        const ok = orc && c.col && E.parseEotpCode(c.col) ? orc.cellMap[b.type === 'RES' ? `${c.col}|${b.mat}|${b.IN}|${b.annee}` : `${c.col}|-`] : undefined;
+        return `<td class="num"><input class="n${forced ? ' fin' : ''}" inputmode="decimal" data-rep="${esc(b.key + '|' + c.col)}" data-auto="${auto}" value="${v ? fmt(v) : ''}" placeholder="0" title="Proposition de l'appli : ${fmt(auto)}${u}">
+          ${forced ? `<button class="fbtn" data-represet="${esc(key)}" title="Revenir à la proposition (${fmt(auto)}${u})">↺</button>` : ''}
+          ${ok !== undefined ? `<div class="small ${Math.abs((ok || 0) - v) < 0.005 ? 'muted' : ''}" style="${Math.abs((ok || 0) - v) < 0.005 ? '' : 'color:var(--orange);font-weight:600'}">SAP : ${fmt(ok)}</div>` : ''}</td>`;
+      }).join('');
+      const reste = b.reste;
+      return `<tr><td class="wrap"><b>${esc(b.label)}</b>${b.virtuel ? '<div class="small muted">absent de la carto (dépose = pose)</div>' : ''}</td>
+        <td class="num">${b.virtuel ? '—' : fmt(b.exact) + u}${b.exactTube > 0 ? `<div class="small muted">dont tubé ${fmt(b.exactTube)}${u}</div>` : ''}</td>
+        <td class="num"><b>${fmt(b.cap)}${u}</b></td>${cells}
+        <td class="num">${Math.abs(reste) < 0.005 ? '<span class="pill" style="background:var(--green-l);color:#2f6b10">0</span>' : `<span class="pill" style="background:var(--orange-l);color:var(--orange)">${fmt(reste)}${u}</span>`}</td></tr>`;
+    }).join('');
+    const tot = c => R.eotpTotals.find(e => e.col === c.col) || { pose: 0, depose: 0 };
+    const depRow = g.cols.map(c => `<td class="num"><b>${fmt(tot(c).depose)}${u}</b></td>`).join('');
+    const poseRow = g.cols.map(c => {
+      const p = g.pose.find(x => x.col === c.col);
+      if (c.cp === 'AB') return '<td class="num muted">—</td>';
+      const key = 'POSE:' + c.col, forced = isForced(key);
+      const sap = orc && orc.poseMap[c.col];
+      return `<td class="num"><input class="n${forced ? ' fin' : ''}" inputmode="decimal" data-pose="${esc(c.col)}" data-auto="${p ? p.auto : 0}" value="${p && p.qty ? fmt(p.qty) : ''}" placeholder="0" title="Carto : ${p ? fmt(p.exact) : 0}${u}">
+        ${forced ? `<button class="fbtn" data-represet="${esc(key)}" title="Revenir à la carto">↺</button>` : ''}
+        ${p && p.unit === 'm' && p.exact !== p.auto ? `<div class="small muted">carto ${fmt(p.exact)}${u}</div>` : ''}
+        ${sap !== undefined ? `<div class="small" style="${Math.abs((sap || 0) - (p ? p.qty : 0)) < 0.005 ? '' : 'color:var(--orange);font-weight:600'}">SAP : ${fmt(sap)}</div>` : ''}</td>`;
+    }).join('');
+    const ecartRow = g.cols.map(c => { const e = tot(c); if (!e.renouv) return '<td class="num muted">—</td>';
+      return `<td class="num">${e.ecart == null ? '—' : e.ecart === Infinity ? 'pas de pose' : (e.ecart > 0.0005 ? '+' : '') + fmt(e.ecart * 100, 1) + ' %'}<br>${e.ok10 ? '<span class="pill" style="background:var(--green-l);color:#2f6b10">OK</span>' : '<span class="pill none">&gt; 10 %</span>'}</td>`; }).join('');
+    const addOpts = R.elements.filter(e => !g.cols.some(c => c.col === e.code)).map(e => `<option value="${esc(e.code)}">${esc(e.code)} — ${esc(e.designation || '')}</option>`).join('');
+    return `<div class="card"><div class="row"><h2 class="grow" style="margin:0">${esc(FAM_LABEL[g.fam])}${R.chantiers.length > 1 ? ' — ' + esc(g.ch) : ''}</h2>
+        ${addOpts ? `<select class="t" style="width:auto;max-width:340px" data-addcol="${g.fam}"><option value="">+ Ajouter une colonne (EOTP)…</option>${addOpts}</select>` : ''}</div>
+      <div class="tw" style="margin-top:8px"><table class="rep"><thead><tr><th>Bien déposé</th><th class="num">Carto</th><th class="num">À répartir</th>${colHead}<th class="num">Reste</th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="${g.cols.length + 4}" class="muted">Aucune dépose dans la carto.</td></tr>`}</tbody>
+      <tfoot><tr class="ft"><td colspan="3"><b>Dépose par EOTP</b></td>${depRow}<td></td></tr>
+      <tr class="ft"><td colspan="3"><b>Pose par EOTP</b> <span class="small muted">(Description technique des EOTP)</span></td>${poseRow}<td></td></tr>
+      <tr class="ft"><td colspan="3"><b>Écart dépose / pose</b> <span class="small muted">(renouvellement, ±10 %)</span></td>${ecartRow}<td></td></tr></tfoot></table></div></div>`;
+  }
 
   function renderResultat(a, R) {
     if (!a.pose && !a.depose) return `<div class="card"><p>Commencez par charger les fichiers carto.</p><button class="btn" data-tab="fichiers">Charger les fichiers</button></div>`;
@@ -417,40 +468,27 @@
     const order = { rouge: 0, orange: 1, info: 2 };
     const ctls = R.controls.slice().sort((x, y) => order[x.level] - order[y.level]).map(c =>
       `<div class="ctl ${c.level}"><span class="lv">${c.level === 'info' ? 'info' : c.level}</span><span>${esc(c.msg)}</span></div>`).join('');
-    // récap
-    const rec = R.recap.map(r => {
-      const kq = `R:${r.key}:qte`, kc = `R:${r.key}:cat`;
-      forceSpecs[kq] = { key: kq, label: `Quantité — ${r.eotp || 'sans EOTP'} — ${r.action} — ${r.libelle}`, auto: r.autoQty, type: 'number' };
-      forceSpecs[kc] = { key: kc, label: `Catégorie d'immo — ${r.eotp || 'sans EOTP'} — ${r.action} — ${r.libelle}`, auto: r.autoCat, type: 'text' };
-      return `<tr><td>${r.eotp ? esc(r.eotp) : '<span class="pill none">sans EOTP</span>'}</td><td><span class="pill ${CPCLS(r.cp)}">${esc(r.cp || '?')}</span></td>
-        <td>${r.action === 'POSE' ? '<span class="tag pose">POSE</span>' : '<span class="tag depose">DÉPOSE</span>'}</td>
-        <td>${esc(r.libelle)}${r.brtPDR ? ' <span class="pill">Brt PDR</span>' : ''}</td>
-        <td class="num">${fcell(kq, fmtQ(r.qtySAP, r.unit), fmtQ(r.autoQty, r.unit))}${r.unit === 'm' && r.qtySAP !== r.qty ? `<div class="small muted">exact : ${fmtQ(r.qty, r.unit)}</div>` : ''}</td>
-        <td>${fcell(kc, r.categorie, r.autoCat)}</td><td class="num">${r.lines.length}</td></tr>`;
-    }).join('');
-    const tot = R.eotpTotals.map(e => `<tr><td>${esc(e.eotp)}</td><td><span class="pill ${CPCLS(e.cp)}">${esc(e.cp)}</span></td>
-      <td class="num">${fmtQ(e.pose, e.unit)}</td><td class="num">${fmtQ(e.depose, e.unit)}${e.abAChoisir > 0 ? `<div class="small muted">+ ${fmtQ(e.abAChoisir, e.unit)} à mettre en AB</div>` : ''}</td><td class="num"><b>${pct(e)}</b></td>
-      <td>${!e.renouv ? '<span class="muted">—</span>' : e.ok10 ? '<span class="pill" style="background:var(--green-l);color:#2f6b10">OK</span>' : '<span class="pill none">écart &gt; 10 %</span>'}</td></tr>`).join('');
-    // PDR
     const pdrRows = R.pdr.map(p => {
       const ks = ['pdr', 'eotp', 'nature'].map(f => `P:${p.key}:${f}`);
       forceSpecs[ks[0]] = { key: ks[0], label: `PDR — numéro (${p.pdr})`, auto: p.auto_pdr ?? p.pdr, type: 'text' };
-      forceSpecs[ks[1]] = { key: ks[1], label: `PDR ${p.pdr} — EOTP`, auto: p.auto_eotp ?? p.eotp, type: 'select', options: eotpOptions(R).slice(1), free: true };
+      forceSpecs[ks[1]] = { key: ks[1], label: `PDR ${p.pdr} — EOTP`, auto: p.auto_eotp ?? p.eotp, type: 'select', options: eotpOptions(R), free: true };
       forceSpecs[ks[2]] = { key: ks[2], label: `PDR ${p.pdr} — nature`, auto: p.auto_nature ?? p.nature, type: 'select', options: [['Pose', 'Pose'], ['Abandon', 'Abandon']] };
       return `<tr><td>${fcell(ks[0], p.pdr, p.auto_pdr ?? p.pdr)}</td><td>${fcell(ks[1], p.eotp || '—', p.auto_eotp ?? p.eotp)}</td><td>${fcell(ks[2], p.nature, p.auto_nature ?? p.nature)}</td>
         <td>${esc(p.categorie)}</td><td>${p.auto ? 'détecté dans SAP' : `ajouté à la main <button class="btn sm danger" data-pdr-del="${esc(p.id)}">✕</button>`}</td></tr>`;
     }).join('');
+    // valeurs à saisir dans SAP (écran ORC)
+    const sapPose = R.pose.filter(p => p.qty > 0).map(p => `<tr><td>${esc(p.col)}</td><td><span class="pill ${CPCLS(p.cp)}">${esc(p.cp || '?')}</span></td><td>${esc(p.categorie)}</td><td class="num"><b>${fmtQ(p.qty, p.unit)}</b></td></tr>`).join('');
+    const sapDep = R.sapDepose.map(s => `<tr><td>${esc(s.col)}</td><td><span class="pill ${CPCLS(s.cp)}">${esc(s.cp || '?')}</span></td><td>${esc(s.label)}</td><td>${esc(s.mat)}</td><td>${esc(s.IN)}</td><td>${esc(s.annee)}</td><td>${esc(s.categorie)}</td><td class="num"><b>${fmtQ(s.qty, s.unit)}</b></td></tr>`).join('');
     return `<div class="verdict ${ok ? 'ok' : 'ko'}"><span class="grow">${ok ? '✔' : '✖'} ${esc(R.verdict)}</span>
         ${isForced(vk) ? `<span class="forced small">forcé (auto : ${esc(R.autoVerdict)})</span>` : ''}
         <button class="btn sm sec" data-force="${vk}">Forcer le verdict</button></div>
       <div class="card" style="margin-top:14px"><h2>Schéma de l'affaire</h2>${renderSchema(R)}</div>
       <div class="card"><h2>Contrôles</h2>${ctls || '<p class="muted">Aucun point à signaler.</p>'}</div>
-      <div class="card"><h2>Lignes d'immo à saisir dans SAP</h2>
-        <p class="small muted">Regroupées par EOTP, action, type, matière, classe IN, année et INSEE (comme VERIF_IMMO). Longueurs = longueur installée, arrondies au mètre supérieur pour la saisie SAP. Les quantités et catégories sont forçables (✎).</p>
-        <div class="tw"><table><thead><tr><th>EOTP</th><th>CP</th><th>Action</th><th>Ligne</th><th class="num">Quantité à saisir</th><th>Catégorie</th><th class="num">Tronçons</th></tr></thead><tbody>${rec || '<tr><td colspan="7" class="muted">—</td></tr>'}</tbody></table></div></div>
-      <div class="card"><h2>Totaux par EOTP et test ±10 %</h2>
-        <p class="small muted">Sur les EOTP de renouvellement (CP 17, 18, 20, 21, 22, 23, 25, 26, 27), écart = (dépose renouvelée − pose) / pose, à garder entre −10 % et +10 %. La dépose renouvelée ne compte pas la part qui doit partir en AB.</p>
-        <div class="tw"><table><thead><tr><th>EOTP</th><th>CP</th><th class="num">Pose</th><th class="num">Dépose renouvelée</th><th class="num">Écart</th><th>Test ±10 %</th></tr></thead><tbody>${tot || '<tr><td colspan="6" class="muted">—</td></tr>'}</tbody></table></div></div>
+      <p class="small muted" style="margin:0 2px 10px">Répartition proposée : chaque EOTP de renouvellement reçoit en dépose la quantité posée (CP 23 d'abord sur la partie tubée), le reste de chaque bien part en abandon. Mètres arrondis au-dessus. Toutes les cases sont modifiables ; ↺ revient à la proposition.</p>
+      ${groups(R).map(g => renderMatrix(a, R, g)).join('')}
+      <div class="card"><h2>Valeurs à saisir dans SAP (écran ORC)</h2>
+        <h3>Description technique des EOTP — quantité réelle</h3><div class="tw"><table><thead><tr><th>EOTP</th><th>CP</th><th>Nat. ouvr.</th><th class="num">Quantité réelle</th></tr></thead><tbody>${sapPose || '<tr><td colspan="4" class="muted">—</td></tr>'}</tbody></table></div>
+        <h3>Dépose — quantité réelle dép/ab</h3><div class="tw"><table><thead><tr><th>EOTP</th><th>CP</th><th>Bien</th><th>Mat.</th><th>IN</th><th>Année</th><th>Nat. ouvr.</th><th class="num">Quantité</th></tr></thead><tbody>${sapDep || '<tr><td colspan="8" class="muted">—</td></tr>'}</tbody></table></div></div>
       ${renderOrcCompare(R)}
       <div class="card"><div class="row"><h2 class="grow" style="margin:0">PDR</h2><button class="btn sm sec" id="pdrAdd">+ Ajouter un PDR</button></div>
         ${R.pdr.length ? `<div class="tw"><table><thead><tr><th>PDR</th><th>EOTP</th><th>Nature</th><th>Catégorie</th><th>Origine</th></tr></thead><tbody>${pdrRows}</tbody></table></div>` : '<p class="muted">Aucun PDR.</p>'}</div>`;
@@ -460,17 +498,14 @@
   function lineMatches(x, f) {
     if (!f) return true;
     if (f.kind && x.kind !== f.kind) return false;
-    if (f.type && x.a.type !== f.type) return false;
-    if (f.tub != null && !!x.a.tubage !== f.tub) return false;
-    if (f.ab && !(x.ab > 0)) return false;
+    if (f.fam && x.a.type !== f.fam) return false;
     return true;
   }
   function renderTroncons(a, R) {
-    if (!R.lines.length) return `<div class="card"><p>Aucun tronçon : charge les fichiers carto.</p></div>`;
+    if (!R.lines.length) return `<div class="card"><p>Aucun tronçon : chargez les fichiers carto.</p></div>`;
     const f = ui.filter;
-    const opts = eotpOptions(R);
     const typeOpts = Object.entries(E.TYPE_LABEL).map(([k, v]) => [k, v]);
-    const pending = R.controls.filter(c => c.level === 'orange' && /abandon|AB/.test(c.msg) && /^Affecter|de trop/.test(c.msg));
+    const bienLabel = k => (R.biens.find(b => b.key === k) || {}).label || '';
     const table = kind => {
       const xs = R.lines.filter(x => x.kind === kind && lineMatches(x, f));
       if (!xs.length) return '<p class="muted">Aucune ligne.</p>';
@@ -480,20 +515,9 @@
         sp('type', 'type', 'select', typeOpts); sp('matiere', 'matière', 'select', [['(PE)', '(PE)'], ['(Ac)', '(Ac)'], ['(Autre)', '(Autre)']]);
         sp('IN', 'classe IN', 'select', [['IN1', 'IN1 (< 80 mm)'], ['IN2', 'IN2 (80 à < 200 mm)'], ['IN3', 'IN3 (≥ 200 mm)']]);
         sp('annee', 'année', 'number'); sp('longueur', 'longueur installée (m)', 'number'); sp('tubage', 'tubage', 'bool');
-        sp('brtPDR', 'branchement de PDR (catégorie P21E)', 'bool'); sp('eotp', 'EOTP (affectation forcée de toute la ligne)', 'select', opts);
-        forceSpecs[k('eotp')].free = true; sp('ignore', 'ignorer la ligne', 'bool');
-        const allocs = x.alloc.map(al => `<span class="pill ${al.eotp ? CPCLS(al.cp) : 'none'}" title="${esc(al.eotp || 'EOTP à créer')}">${esc(al.eotp ? al.eotp.split('-').slice(-2).join('-') : 'à créer')} · ${fmtQ(al.qty, x.a.type === 'RES' ? 'm' : 'u')}${al.forced ? ' ✎' : ''}</span>`).join('');
-        let choice = '';
-        const inPool = !x.a.ignore && !x.a.eotp && x.a.type !== 'AUTRE';
-        if (inPool && kind === 'depose') {
-          if (x.a.type === 'RES') choice = `<span class="cell"><input class="n" type="text" inputmode="decimal" data-ab="${esc(x.uid)}" value="${a.choices.ab[x.uid] ? fmt(a.choices.ab[x.uid]) : ''}" placeholder="0"> m <button class="btn sm sec" data-aball="${esc(x.uid)}" data-len="${x.a.longueur}">Tout</button></span>`;
-          else choice = `<label class="cell"><input type="checkbox" data-abchk="${esc(x.uid)}" ${a.choices.ab[x.uid] ? 'checked' : ''}> AB</label>`;
-        }
-        if (inPool && kind === 'pose' && x.a.type === 'RES' && x.a.tubage) {
-          const user = a.choices.split22[x.uid];
-          choice = `<span class="cell" title="Part de ce tronçon tubé reportée en CP 22 (surplus de tubage)">CP22 : <input class="n" type="text" inputmode="decimal" data-split="${esc(x.uid)}" value="${user != null ? fmt(user) : ''}" placeholder="${fmt(x.split22 || 0)}"> m</span>`;
-        }
+        sp('brtPDR', 'branchement de PDR (catégorie P21E)', 'bool'); sp('ignore', 'ignorer la ligne', 'bool');
         const yr = kind === 'pose' ? E.dateDisp(x.src.etatDepuis) : E.dateDisp(x.src.dateInst);
+        const dest = kind === 'pose' ? (x.eotp ? `<span class="pill ${CPCLS((R.pose.find(p => p.col === x.eotp) || {}).cp)}" title="${esc(x.eotp)}">${esc(colShort(x.eotp))}</span>` : '—') : (x.bien ? esc(bienLabel(x.bien)) : '—');
         return `<tr class="${x.a.ignore ? 'ign' : ''}"><td class="num">${x.src.row}</td><td>${esc(id)}</td><td class="fn">${esc(x.src.fonction)}</td>
           <td>${fcell(k('type'), E.TYPE_LABEL[x.a.type], E.TYPE_LABEL[x.auto.type])}</td>
           <td title="${esc(x.src.materiau)}">${fcell(k('matiere'), x.a.matiere, x.auto.matiere)}${x.a.matiere === '(Autre)' ? ` <span class="small muted">${esc((x.src.materiau.match(/\(([^)]+)\)/) || [, ''])[1])}</span>` : ''}</td>
@@ -502,27 +526,22 @@
           <td class="num">${fcell(k('longueur'), fmt(x.a.longueur), fmt(x.auto.longueur))}</td>
           <td class="num">${x.src.lSig == null ? '<span class="muted">vide</span>' : fmt(x.src.lSig)}</td>
           <td title="${esc(x.src.technique)} · ${esc(x.src.etat)}">${x.a.type === 'RES' ? fcell(k('tubage'), x.a.tubage ? 'Oui' : 'Non', x.auto.tubage ? 'Oui' : 'Non') : '<span class="muted">—</span>'}</td>
-          <td class="al">${allocs || '<span class="muted">—</span>'} <button class="fbtn" data-force="${esc(k('eotp'))}" title="Forcer l'EOTP de toute la ligne">✎</button></td>
-          <td>${choice}</td>
+          <td class="al">${dest}</td>
           <td>${x.a.type === 'RES' ? fcell(k('brtPDR'), x.a.brtPDR ? 'Oui' : 'Non', 'Non') : ''}</td>
           <td>${fcell(k('ignore'), x.a.ignore ? 'Oui' : 'Non', 'Non')}</td>
           <td class="cm small muted" title="${esc(x.src.commentaire)}">${esc(x.src.commentaire)}</td></tr>`;
       }).join('');
-      return `<div class="tw"><table class="tr"><thead><tr><th class="num">Ligne</th><th>Id SIG</th><th>Fonction réseau</th><th>Type</th><th>Matière</th><th class="num">Ø ext.</th><th>IN</th><th>Année</th><th class="num">Long. inst.</th><th class="num">Long. SIG</th><th>Tubage</th><th>EOTP affecté(s)</th><th>${kind === 'depose' ? 'Choix AB' : 'Surplus tubage'}</th><th>Brt PDR</th><th>Ignorer</th><th>Commentaire carto</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+      return `<div class="tw"><table class="tr"><thead><tr><th class="num">Ligne</th><th>Id SIG</th><th>Fonction réseau</th><th>Type</th><th>Matière</th><th class="num">Ø ext.</th><th>IN</th><th>Année</th><th class="num">Long. inst.</th><th class="num">Long. SIG</th><th>Tubage</th><th>${kind === 'pose' ? 'EOTP' : 'Bien'}</th><th>Brt PDR</th><th>Ignorer</th><th>Commentaire carto</th></tr></thead><tbody>${rows}</tbody></table></div>`;
     };
-    return `${pending.length ? `<div class="card">${pending.map(c => `<div class="ctl orange"><span class="lv">à faire</span><span>${esc(c.msg)}</span></div>`).join('')}
-        <p class="small muted">Choisissez, dans le tableau Dépose (colonne « Choix AB »), les tronçons ou la part de tronçon qui partent en abandon.</p></div>` : ''}
-      ${f ? `<div class="filterbar"><span>Filtre : ${esc(describeFilter(f))}</span><button class="btn sm sec" id="clrFilter">Tout afficher</button></div>` : ''}
+    return `${f ? `<div class="filterbar"><span>Filtre : ${esc(describeFilter(f))}</span><button class="btn sm sec" id="clrFilter">Tout afficher</button></div>` : ''}
+      <p class="small muted">Détail des tronçons de la carto. ✎ = corriger une valeur de la carto (type, matière, IN, année, longueur, tubage…) ; la répartition se recalcule.</p>
       <div class="card"><h2>Pose <span class="small muted">(${esc(a.pose ? a.pose.fileName : 'aucun fichier')})</span></h2>${a.pose ? table('pose') : '<p class="muted">—</p>'}</div>
-      <div class="card"><h2>Dépose <span class="small muted">(${esc(a.depose ? a.depose.fileName : 'aucun fichier')})</span></h2>${a.depose ? table('depose') : '<p class="muted">—</p>'}</div>
-      <p class="small muted">✎ = forcer une valeur. Une valeur forcée est surlignée en violet et n'est jamais écrasée par un nouveau calcul.</p>`;
+      <div class="card"><h2>Dépose <span class="small muted">(${esc(a.depose ? a.depose.fileName : 'aucun fichier')})</span></h2>${a.depose ? table('depose') : '<p class="muted">—</p>'}</div>`;
   }
   function describeFilter(f) {
     const p = [];
     if (f.kind) p.push(f.kind === 'pose' ? 'pose' : 'dépose');
-    if (f.type) p.push(E.TYPE_LABEL[f.type]);
-    if (f.tub === true) p.push('tubage'); if (f.tub === false) p.push('hors tubage');
-    if (f.ab) p.push('mis en AB');
+    if (f.fam) p.push(FAM_LABEL[f.fam]);
     return p.join(' · ');
   }
 
@@ -550,19 +569,17 @@
       <h3>Étapes</h3><ol>
       <li><b>Fichiers carto</b> : glisser les deux fichiers « G Canalisation » (pose et dépose) envoyés par la carto, sans les ouvrir.</li>
       <li><b>Captures SAP</b> : capture de la structure du projet (onglet « Donn. base »), puis, si possible, capture de l'écran ORC « Dépose des immobilisations ». Vérification de ce qui a été lu.</li>
-      <li><b>Résultat</b> : verdict, schéma, contrôles, lignes d'immo à saisir, test ±10 %, PDR.</li>
-      <li><b>Tronçons</b> : détail ligne par ligne, choix des tronçons qui partent en AB, forçages.</li>
+      <li><b>Répartition</b> : verdict, schéma, contrôles, tableau de répartition des biens entre les EOTP (modifiable), valeurs à saisir dans SAP, comparaison avec l'écran ORC, PDR.</li>
+      <li><b>Tronçons</b> : détail des tronçons de la carto et correction de leurs valeurs.</li>
       <li><b>Export</b> : PDF / Excel avec la trace des forçages, sauvegarde de l'affaire.</li></ol>
-      <h3>Règles appliquées (réseau)</h3><ol>
-      <li><b>Dépose tubée</b> = « Etat de service » Abandonné et « Longueur SIG » = 0 (ou vide). <b>Pose tubée</b> = technique de pose contenant « Tubage ».</li>
-      <li><b>CP 23</b> = la plus petite longueur entre le PE posé en tubage et la dépose tubée. Le surplus de dépose tubée part en <b>AB</b>, le surplus de PE tubé part en <b>CP 22</b>.</li>
-      <li><b>CP 22</b> = toute la pose restante (hors tubage + surplus de tubage). En face : la dépose non tubée, à concurrence de cette pose. Le reste de la dépose part en <b>AB</b>.</li>
-      <li>Les tronçons qui partent en AB sont <b>choisis par le CA</b> (onglet Tronçons). Le CP 15 n'est jamais choisi automatiquement : il reste disponible par forçage.</li>
-      <li>Tolérance : un surplus de dépose de <b>moins de 1 m</b> n'est pas envoyé en AB ; il reste sur l'EOTP de renouvellement (sauf si le CA choisit de l'AB).</li>
-      <li>Quantités à saisir dans SAP : mètres <b>arrondis à l'unité supérieure</b> (ex : 15,6 m → 16 m).</li>
-      <li>Longueur retenue : <b>longueur installée</b>. Classes : IN1 &lt; 80 mm ; IN2 de 80 à &lt; 200 mm ; IN3 ≥ 200 mm (diamètre externe).</li></ol>
-      <h3>Écran ORC</h3><ul><li>Facultatif. L'appli lit les deux tableaux (« Description technique des EOTP » et « Dépose ») et compare chaque quantité réelle saisie dans SAP avec sa proposition : pose par EOTP ; dépose par EOTP, matière, classe IN et année. Les EOTP de l'écran ORC absents de la liste sont ajoutés à la liste des EOTP.</li></ul>
-            <h3>Branchements</h3><ul><li>Une ligne carto = un branchement. Individuel (courant, GC) → CP 25 ; collectif → CP 26. Renouvelés = le plus petit nombre entre pose et dépose ; le surplus de dépose part en AB (lignes cochées par le CA). Le tubage ne s'applique qu'au réseau.</li></ul>
+      <h3>Répartition (onglet 3)</h3><ol>
+      <li><b>Pose par EOTP</b> : réseau posé en tubage (technique de pose contenant « Tubage ») → CP 23 ; autre réseau → CP 22 ; branchements individuels (courant, GC) → CP 25 ; collectifs → CP 26. Longueur installée, arrondie au mètre supérieur.</li>
+      <li><b>Biens déposés</b> : la dépose de la carto est regroupée par bien (matière, classe IN, année), comme dans l'écran ORC. Dépose tubée = Abandonné avec « Longueur SIG » = 0 ou vide.</li>
+      <li><b>Proposition</b> : chaque EOTP de renouvellement reçoit en dépose la quantité posée ; le CP 23 puise d'abord dans la partie tubée des biens, le CP 22 dans la partie non tubée. Le reste de chaque bien part en <b>abandon</b> (élément AB).</li>
+      <li>Le CA contrôle et modifie toutes les cases (pose et dépose) ; ↺ revient à la proposition. Le reste à répartir de chaque bien doit être nul.</li>
+      <li><b>CP 15</b> (restructuration) : traité comme un EOTP normal ; s'il existe dans SAP, il apparaît en colonne pour y affecter des quantités. Toute autre colonne peut être ajoutée (« + Ajouter une colonne »).</li>
+      <li>Classes : IN1 &lt; 80 mm ; IN2 de 80 à &lt; 200 mm ; IN3 ≥ 200 mm (diamètre externe).</li></ol>
+      <h3>Branchements</h3><ul><li>Une ligne carto = un branchement. Dépose renouvelée = nombre posé ; le reste des branchements déposés part en abandon. Si la carto ne contient aucun branchement déposé, la dépose proposée est égale à la pose (à vérifier dans SAP). Le tubage ne s'applique qu'au réseau.</li></ul>
       <h3>Fonte grise</h3><ul><li>Si la structure SAP contient les CP 17, 18, 20 ou 21 à la place de 22, 23, 25 ou 26, l'appli les utilise.</li></ul>
       <h3>PDR</h3><ul><li>Absents de la carto : détectés dans les désignations SAP (« D00000-PDR00000 »). Nature = Abandon si l'EOTP est sous AB, sinon Pose (catégorie S31E). Le branchement d'un poste est traité comme du réseau ; l'option « Brt PDR » (catégorie P21E) reste disponible ligne par ligne.</li></ul>
       <h3>Contrôles</h3><ul>
@@ -628,11 +645,25 @@
     // schéma
     document.querySelectorAll('.seg').forEach(g => g.onclick = () => { ui.filter = JSON.parse(g.dataset.filter); ui.tab = 'troncons'; render(); window.scrollTo(0, 0); });
     const cf = $('#clrFilter'); if (cf) cf.onclick = () => { ui.filter = null; render(); };
-    // choix AB / surplus
-    document.querySelectorAll('[data-ab]').forEach(i => i.onchange = () => { const v = parseFloat(String(i.value).replace(/\s/g, '').replace(',', '.')); if (isFinite(v) && v > 0) a.choices.ab[i.dataset.ab] = v; else delete a.choices.ab[i.dataset.ab]; touch(a); render(); });
-    document.querySelectorAll('[data-aball]').forEach(b => b.onclick = () => { a.choices.ab[b.dataset.aball] = +b.dataset.len; touch(a); render(); });
-    document.querySelectorAll('[data-abchk]').forEach(i => i.onchange = () => { if (i.checked) a.choices.ab[i.dataset.abchk] = 1; else delete a.choices.ab[i.dataset.abchk]; touch(a); render(); });
-    document.querySelectorAll('[data-split]').forEach(i => i.onchange = () => { const v = parseFloat(String(i.value).replace(',', '.')); if (isFinite(v)) a.choices.split22[i.dataset.split] = v; else delete a.choices.split22[i.dataset.split]; touch(a); render(); });
+    // cases de répartition (dépose) et de pose : forçage en ligne
+    const setForce = (key, label, auto, raw) => {
+      const v = parseFloat(String(raw).replace(/\s/g, '').replace(',', '.'));
+      const val = isFinite(v) ? v : 0;
+      if (Math.abs(val - auto) < 0.005) delete a.forces[key];
+      else a.forces[key] = { value: val, comment: (a.forces[key] || {}).comment || '', date: nowStr(), label, auto: fmt(auto) };
+      touch(a); render();
+    };
+    document.querySelectorAll('[data-rep]').forEach(i => i.onchange = () => {
+      const [bk, col] = [i.dataset.rep.slice(0, i.dataset.rep.lastIndexOf('|')), i.dataset.rep.slice(i.dataset.rep.lastIndexOf('|') + 1)];
+      const b = (ui.R.biens || []).find(x => x.key === bk);
+      setForce('REP:' + i.dataset.rep, `Répartition — ${b ? b.label : bk} — ${col}`, +i.dataset.auto, i.value);
+    });
+    document.querySelectorAll('[data-pose]').forEach(i => i.onchange = () => setForce('POSE:' + i.dataset.pose, `Pose — ${i.dataset.pose}`, +i.dataset.auto, i.value));
+    document.querySelectorAll('[data-represet]').forEach(b => b.onclick = () => { delete a.forces[b.dataset.represet]; touch(a); render(); });
+    document.querySelectorAll('[data-addcol]').forEach(sel => sel.onchange = () => {
+      if (!sel.value) return; a.extraCols = a.extraCols || {}; const f = sel.dataset.addcol;
+      a.extraCols[f] = [...new Set((a.extraCols[f] || []).concat(sel.value))]; touch(a); render();
+    });
     // PDR
     const pa = $('#pdrAdd'); if (pa) pa.onclick = () => pdrDialog(a);
     document.querySelectorAll('[data-pdr-del]').forEach(b => b.onclick = () => { a.pdrManual = a.pdrManual.filter(p => p.id !== b.dataset.pdrDel); touch(a); render(); });
@@ -699,28 +730,46 @@
   }
 
   function lineRows(R, kind) {
+    const bl = k => (R.biens.find(b => b.key === k) || {}).label || '';
     return R.lines.filter(x => x.kind === kind).map(x => [x.src.row, x.src.id, x.src.fonction, E.TYPE_LABEL[x.a.type], x.a.matiere, x.src.diam, x.a.IN, x.a.annee,
-      x.a.longueur, x.src.lSig, x.a.type === 'RES' ? (x.a.tubage ? 'Oui' : 'Non') : '', x.alloc.map(al => `${al.eotp || 'à créer'} : ${al.qty}`).join(' | '), x.ab || '', x.a.ignore ? 'Oui' : '']);
+      x.a.longueur, x.src.lSig, x.a.type === 'RES' ? (x.a.tubage ? 'Oui' : 'Non') : '', kind === 'pose' ? (x.eotp || '') : bl(x.bien), x.a.ignore ? 'Oui' : '']);
   }
-  const LINE_HDR = ['Ligne', 'Id SIG', 'Fonction réseau', 'Type', 'Matière', 'Ø ext.', 'IN', 'Année', 'Long. installée', 'Long. SIG', 'Tubage', 'EOTP (quantité)', 'AB', 'Ignorée'];
+  const LINE_HDR = ['Ligne', 'Id SIG', 'Fonction réseau', 'Type', 'Matière', 'Ø ext.', 'IN', 'Année', 'Long. installée', 'Long. SIG', 'Tubage', 'EOTP / bien', 'Ignorée'];
   const forceRows = a => Object.entries(a.forces).map(([k, f]) => [f.label || k, f.auto, fmtVal(f.value), f.comment || '', f.date]);
+  const statut = x => x.absent ? 'absent ORC' : x.ok ? 'identique' : 'différent';
+  // tableau de répartition à plat (une ligne par bien, une colonne par EOTP)
+  function matrixAoa(R) {
+    const out = [];
+    for (const g of groups(R)) {
+      const u = g.fam === 'RES' ? 'm' : 'nb';
+      out.push([FAM_LABEL[g.fam] + (R.chantiers.length > 1 ? ' — ' + g.ch : '') + ` (${u})`]);
+      out.push(['Bien déposé', 'Carto', 'À répartir', ...g.cols.map(c => c.col), 'Reste']);
+      for (const b of g.biens) out.push([b.label, b.virtuel ? '' : b.exact, b.cap, ...g.cols.map(c => b.cells[c.col] || 0), b.reste]);
+      const tot = c => R.eotpTotals.find(e => e.col === c.col) || { pose: 0, depose: 0 };
+      out.push(['Dépose par EOTP', '', '', ...g.cols.map(c => tot(c).depose), '']);
+      out.push(['Pose par EOTP', '', '', ...g.cols.map(c => c.cp === 'AB' ? '' : tot(c).pose), '']);
+      out.push(['Écart ±10 %', '', '', ...g.cols.map(c => !tot(c).renouv ? '' : `${pct(tot(c))} ${tot(c).ok10 ? 'OK' : '> 10 %'}`), '']);
+      out.push([]);
+    }
+    return out;
+  }
 
   function exportXlsx(a, R) {
     const wb = XLSX.utils.book_new();
     const add = (name, aoa, widths) => { const ws = XLSX.utils.aoa_to_sheet(aoa); if (widths) ws['!cols'] = widths.map(w => ({ wch: w })); XLSX.utils.book_append_sheet(wb, ws, name); };
     add('Synthèse', [[APPNAME + ' Ver.' + VERSION], ['Affaire', a.nom], ['Édité le', nowStr()], ['Fichier pose', a.pose ? a.pose.fileName : ''], ['Fichier dépose', a.depose ? a.depose.fileName : ''],
       ['Verdict', R.verdict + (a.forces.VERDICT ? ' (forcé, auto : ' + R.autoVerdict + ')' : '')], [], ['Niveau', 'Contrôle'], ...R.controls.map(c => [c.level, c.msg])], [18, 120]);
-    add("Lignes d'immo", [['EOTP', 'CP', 'Action', 'Ligne', 'Quantité à saisir', 'Quantité exacte', 'Unité', 'Catégorie', 'Forcé', 'Nb tronçons'],
-      ...R.recap.map(r => [r.eotp, r.cp, r.action, r.libelle, r.qtySAP, r.qty, r.unit === 'm' ? 'm' : 'nb', r.categorie, (r.forcedQty || r.forcedCat) ? 'Oui' : '', r.lines.length])], [28, 5, 8, 36, 12, 12, 6, 12, 7, 10]);
-    add('Totaux EOTP', [['EOTP', 'CP', 'Pose', 'Dépose renouvelée', 'Unité', 'Écart', 'Test ±10 %'],
-      ...R.eotpTotals.map(e => [e.eotp, e.cp, e.pose, e.depose, e.unit === 'm' ? 'm' : 'nb', pct(e), !e.renouv ? '—' : e.ok10 ? 'OK' : 'ÉCART > 10 %'])], [28, 5, 10, 10, 6, 13, 14]);
+    add('Répartition', matrixAoa(R), [30, 10, 11, 26, 26, 26, 26, 26, 10]);
+    add('Saisie SAP (ORC)', [['Tableau', 'EOTP', 'CP', 'Bien', 'Mat.', 'IN', 'Année', 'Nat. ouvr.', 'Quantité réelle', 'Unité'],
+      ...R.pose.filter(p => p.qty > 0).map(p => ['Description technique des EOTP', p.col, p.cp, '', '', '', '', p.categorie, p.qty, p.unit === 'm' ? 'M' : 'PCE']),
+      ...R.sapDepose.map(s => ['Dépose', s.col, s.cp, s.label, s.mat, s.IN, s.annee, s.categorie, s.qty, s.unit === 'm' ? 'M' : 'PCE'])], [30, 28, 5, 26, 6, 6, 7, 10, 14, 6]);
     add('PDR', [['PDR', 'EOTP', 'Nature', 'Catégorie', 'Origine'], ...R.pdr.map(p => [p.pdr, p.eotp, p.nature, p.categorie, p.auto ? 'détecté SAP' : 'manuel'])], [18, 28, 10, 10, 12]);
-    add('Tronçons pose', [LINE_HDR, ...lineRows(R, 'pose')], [6, 12, 26, 12, 8, 7, 5, 6, 10, 9, 7, 50, 6, 7]);
-    add('Tronçons dépose', [LINE_HDR, ...lineRows(R, 'depose')], [6, 12, 26, 12, 8, 7, 5, 6, 10, 9, 7, 50, 6, 7]);
+    add('Tronçons pose', [LINE_HDR, ...lineRows(R, 'pose')], [6, 12, 26, 12, 8, 7, 5, 6, 10, 9, 7, 30, 7]);
+    add('Tronçons dépose', [LINE_HDR, ...lineRows(R, 'depose')], [6, 12, 26, 12, 8, 7, 5, 6, 10, 9, 7, 30, 7]);
     add('EOTP SAP', [['Élément d\'OTP', 'Désignation'], ...a.eotps.map(e => [e.code, e.designation])], [30, 50]);
     if (R.orc) add('Comparaison ORC', [['Tableau', 'EOTP', 'Désignation', 'Mat.', 'IN', 'Année', 'Qté prév.', 'Qté réelle SAP', 'Proposition', 'Statut'],
-      ...R.orc.pose.map(x => ['Pose', x.eotp, x.nat || '', '', '', '', x.prev, x.reel, x.app, x.absent ? 'absent ORC' : x.ok ? 'identique' : 'différent']),
-      ...R.orc.depose.map(x => ['Dépose', x.eotp, x.designation || '', x.mat || '', x.IN || '', x.annee || '', x.prev, x.reel, x.app, x.absent ? 'absent ORC' : x.ok ? 'identique' : 'différent'])], [8, 28, 34, 6, 6, 7, 10, 14, 12, 12]);
+      ...R.orc.pose.map(x => ['Pose', x.eotp, x.nat || '', '', '', '', x.prev, x.reel, x.app, statut(x)]),
+      ...R.orc.depose.map(x => ['Dépose', x.eotp, x.designation || '', x.mat || '', x.IN || '', x.annee || '', x.prev, x.reel, x.app, statut(x)])], [8, 28, 34, 6, 6, 7, 10, 14, 12, 12]);
     add('Forçages', [['Valeur', 'Auto', 'Forcée', 'Commentaire', 'Date'], ...forceRows(a)], [60, 18, 18, 40, 18]);
     const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
     download(new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `${safeName(a.nom)}_controle_${stamp()}.xlsx`);
@@ -741,33 +790,26 @@
     doc.setTextColor(...(ok ? [47, 107, 16] : [198, 40, 40])); doc.setFontSize(12);
     doc.text('Verdict : ' + R.verdict + (a.forces.VERDICT ? '  (forcé — auto : ' + R.autoVerdict + ')' : ''), 14, 39.7);
     doc.setTextColor(20);
-    // schéma simplifié
     let y = 50;
-    const colors = { c23: [0, 94, 184], c22: [42, 157, 143], ab: [138, 150, 163], pend: [224, 123, 0], br: [91, 170, 45] };
+    const hex = h => { const m = String(h).replace('#', '').match(/.{2}/g) || ['88', '88', '88']; return m.map(x => parseInt(x, 16)); };
+    const C = { c23: getCss('--c23'), c22: getCss('--c22'), cab: getCss('--cab'), pend: getCss('--cpend'), cbr: getCss('--cbr') };
     doc.setFontSize(10); doc.text('Schéma', 10, y); y += 4;
-    for (const p of R.pools) {
-      let dep, pos;
-      if (p.kind === 'RES') {
-        dep = [[p.R23dep ?? p.R23, 'c23'], [p.AB23 - Math.max(0, p.s23.rest), 'ab'], [Math.max(0, p.s23.rest), 'pend'], [p.R22dep ?? p.R22, 'c22'], [p.AB22 - Math.max(0, p.s22.rest), 'ab'], [Math.max(0, p.s22.rest), 'pend']];
-        pos = [[p.R23, 'c23'], [p.surplusTub, 'c22'], [p.P22 - p.surplusTub, 'c22']];
-      } else {
-        dep = [[p.D - p.AB, 'br'], [Math.min(p.chosen, p.AB), 'ab'], [Math.max(0, p.AB - p.chosen), 'pend']];
-        pos = [[p.P, 'br']];
-      }
+    for (const g of groups(R)) {
+      const u = g.fam === 'RES' ? ' m' : '';
+      const dep = g.cols.map(c => [g.biens.reduce((s, b) => s + (+b.cells[c.col] || 0), 0), colColor(c.cp, C)]);
+      const reste = g.biens.reduce((s, b) => s + Math.max(0, b.reste), 0); if (reste > 0) dep.push([reste, C.pend]);
+      const pos = g.cols.map(c => { const p = g.pose.find(x => x.col === c.col); return [p ? p.qty : 0, colColor(c.cp, C)]; });
       const tot = s => s.reduce((t, x) => t + Math.max(0, x[0]), 0);
-      const mx = Math.max(tot(dep), tot(pos), 0.0001), BW = 150, u = p.unit === 'm' ? ' m' : '';
-      doc.setFontSize(9); doc.text(p.label + (R.chantiers.length > 1 ? ' — ' + p.chantier : ''), 10, y + 4);
+      const mx = Math.max(tot(dep), tot(pos), 0.0001), BW = 150;
+      if (y > 180) { doc.addPage(); y = 14; }
+      doc.setFontSize(9); doc.text(FAM_LABEL[g.fam] + (R.chantiers.length > 1 ? ' — ' + g.ch : ''), 10, y + 4);
       const bar = (segs, yy, lab) => {
-        doc.text(lab, 45, yy + 3.6); let x = 80;
-        for (const [v, c] of segs) { if (v <= 0.004) continue; const w = Math.max(0.6, v / mx * BW); doc.setFillColor(...colors[c]); doc.rect(x, yy, w, 5, 'F'); if (w > 14) { doc.setTextColor(255); doc.text(fmt(v, 1) + u, x + w / 2, yy + 3.6, { align: 'center' }); doc.setTextColor(20); } x += w; }
+        doc.text(lab, 55, yy + 3.6); let x = 90;
+        for (const [v, c] of segs) { if (v <= 0.004) continue; const w = Math.max(0.6, v / mx * BW); doc.setFillColor(...hex(c)); doc.rect(x, yy, w, 5, 'F'); if (w > 14) { doc.setTextColor(255); doc.text(fmt(v, 1) + u, x + w / 2, yy + 3.6, { align: 'center' }); doc.setTextColor(20); } x += w; }
       };
       bar(dep, y, `Ancien ${fmt(tot(dep))}${u}`); bar(pos, y + 6.5, `Nouveau ${fmt(tot(pos))}${u}`);
       y += 16;
     }
-    doc.setFontSize(7.5);
-    const lg = [['CP 23 tubage', 'c23'], ['CP 22 hors tubage', 'c22'], ['Branchements', 'br'], ['AB', 'ab'], ['AB à choisir', 'pend']];
-    let lx = 10; for (const [l, c] of lg) { doc.setFillColor(...colors[c]); doc.rect(lx, y - 2.6, 3, 3, 'F'); doc.text(l, lx + 4, y); lx += 34; }
-    y += 4;
     const tbl = (title, head, body, opts = {}) => {
       if (y > 175) { doc.addPage(); y = 14; }
       doc.setFontSize(11); doc.setTextColor(0, 74, 145); doc.text(title, 10, y); doc.setTextColor(20);
@@ -775,14 +817,19 @@
       y = doc.lastAutoTable.finalY + 8;
     };
     tbl('Contrôles', ['Niveau', 'Contrôle'], R.controls.map(c => [c.level.toUpperCase(), c.msg]), { columnStyles: { 0: { cellWidth: 18 } } });
-    tbl("Lignes d'immo à saisir dans SAP", ['EOTP', 'CP', 'Action', 'Ligne', 'Quantité', 'Catégorie', 'Forcé'],
-      R.recap.map(r => [r.eotp || 'SANS EOTP', r.cp || '', r.action, r.libelle, fmtQ(r.qtySAP, r.unit) + (r.unit === 'm' && r.qtySAP !== r.qty ? ` (${fmtQ(r.qty, r.unit)})` : ''), r.categorie, (r.forcedQty || r.forcedCat) ? 'Oui' : '']));
-    tbl('Totaux par EOTP — test ±10 %', ['EOTP', 'CP', 'Pose', 'Dépose renouvelée', 'Écart', 'Test ±10 %'],
-      R.eotpTotals.map(e => [e.eotp, e.cp, fmtQ(e.pose, e.unit), fmtQ(e.depose, e.unit), pct(e), !e.renouv ? '—' : e.ok10 ? 'OK' : 'ÉCART > 10 %']));
-    tbl('PDR', ['PDR', 'EOTP', 'Nature', 'Catégorie', 'Origine'], R.pdr.map(p => [p.pdr, p.eotp, p.nature, p.categorie, p.auto ? 'détecté SAP' : 'manuel']));
+    for (const g of groups(R)) {
+      const tot = c => R.eotpTotals.find(e => e.col === c.col) || { pose: 0, depose: 0 };
+      tbl('Répartition — ' + FAM_LABEL[g.fam] + (R.chantiers.length > 1 ? ' — ' + g.ch : ''), ['Bien déposé', 'Carto', 'À répartir', ...g.cols.map(c => colShort(c.col)), 'Reste'],
+        g.biens.map(b => [b.label, b.virtuel ? '—' : fmt(b.exact), fmt(b.cap), ...g.cols.map(c => fmt(b.cells[c.col] || 0)), fmt(b.reste)])
+          .concat([['Dépose par EOTP', '', '', ...g.cols.map(c => fmt(tot(c).depose)), ''], ['Pose par EOTP', '', '', ...g.cols.map(c => c.cp === 'AB' ? '—' : fmt(tot(c).pose)), ''],
+            ['Écart ±10 %', '', '', ...g.cols.map(c => !tot(c).renouv ? '—' : `${pct(tot(c))} ${tot(c).ok10 ? 'OK' : '> 10 %'}`), '']]));
+    }
+    tbl('Valeurs à saisir dans SAP — Description technique des EOTP', ['EOTP', 'CP', 'Nat. ouvr.', 'Quantité réelle'], R.pose.filter(p => p.qty > 0).map(p => [p.col, p.cp || '', p.categorie, fmtQ(p.qty, p.unit)]));
+    tbl('Valeurs à saisir dans SAP — Dépose', ['EOTP', 'CP', 'Bien', 'Mat.', 'IN', 'Année', 'Nat. ouvr.', 'Quantité réelle'], R.sapDepose.map(s => [s.col, s.cp || '', s.label, s.mat, s.IN, s.annee, s.categorie, fmtQ(s.qty, s.unit)]));
     if (R.orc) tbl("Comparaison avec l'écran ORC", ['Tableau', 'EOTP', 'Désignation', 'Mat.', 'IN', 'Année', 'Qté prév.', 'Qté réelle SAP', 'Proposition', 'Statut'],
-      R.orc.pose.map(x => ['Pose', x.eotp, x.nat || '', '', '', '', x.prev ?? '—', x.reel ?? '—', x.app, x.absent ? 'absent ORC' : x.ok ? 'identique' : 'différent'])
-        .concat(R.orc.depose.map(x => ['Dépose', x.eotp, x.designation || '', x.mat || '', x.IN || '', x.annee || '', x.prev ?? '—', x.reel ?? '—', x.app, x.absent ? 'absent ORC' : x.ok ? 'identique' : 'différent'])));
+      R.orc.pose.map(x => ['Pose', x.eotp, x.nat || '', '', '', '', x.prev ?? '—', x.reel ?? '—', x.app, statut(x)])
+        .concat(R.orc.depose.map(x => ['Dépose', x.eotp, x.designation || '', x.mat || '', x.IN || '', x.annee || '', x.prev ?? '—', x.reel ?? '—', x.app, statut(x)])));
+    tbl('PDR', ['PDR', 'EOTP', 'Nature', 'Catégorie', 'Origine'], R.pdr.map(p => [p.pdr, p.eotp, p.nature, p.categorie, p.auto ? 'détecté SAP' : 'manuel']));
     tbl('Trace des forçages', ['Valeur', 'Auto', 'Forcée', 'Commentaire', 'Date'], forceRows(a));
     doc.addPage(); y = 14;
     tbl('Annexe — tronçons pose', LINE_HDR, lineRows(R, 'pose'));

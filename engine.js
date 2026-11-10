@@ -314,29 +314,30 @@
     return a;
   }
 
-  // ---------- Calcul principal ----------
-  // state : { pose:{lines}, depose:{lines}, eotps:[{code,designation}], forces:{}, choices:{ ab:{}, split22:{} }, pdrManual:[] }
+  // ---------- Calcul principal : répartition des biens entre les EOTP ----------
+  // state : { pose:{lines}, depose:{lines}, eotps:[{code,designation}], forces:{}, orc, orcVerified, eotpVerified, pdrManual:[] }
+  // forces : L:<pose|depose>:<id>:<champ> (attributs de ligne) | POSE:<eotp> (quantité posée) | REP:<cléBien>|<eotp> (case de répartition)
+  //          P:<pdrKey>:<champ> | VERDICT
+  const MAT_SAP = { '(PE)': 'PE', '(Ac)': 'AC', '(Autre)': 'A' };
+  const famOfCp = cp => (['20', '25', '04', '08', '02'].includes(cp) ? 'BI' : ['21', '26', '05', '09'].includes(cp) ? 'BC' : ['27', '06', '10'].includes(cp) ? 'CI' : 'RES');
+  const ceilQ = (q, unit) => unit === 'm' ? Math.ceil(q - 1e-9) : Math.round(q);
   function compute(state) {
     const forces = state.forces || {};
-    const choices = state.choices || { ab: {}, split22: {} };
-    choices.ab = choices.ab || {}; choices.split22 = choices.split22 || {};
     const eotps = (state.eotps || []).map(e => ({ ...e, p: parseEotpCode(e.code) })).filter(e => e.p);
     const elements = eotps.filter(e => e.p.elem);
     const chantiers = [...new Set(eotps.map(e => e.p.chantier).filter(Boolean))];
     const controls = [];
     const add = (level, msg, ref) => controls.push({ level, msg, ref: ref || null });
 
-    // 1. lignes enrichies
+    // 1. lignes carto enrichies
     const L = [];
     for (const kind of ['pose', 'depose']) {
       for (const l of ((state[kind] && state[kind].lines) || [])) {
         const auto = autoAttrs(l, kind);
         const a = applyLineForces(kind, l, auto, forces);
         let chantier = a.chantier;
-        if (!chantier || !chantiers.includes(chantier)) {
-          if (chantiers.length === 1) chantier = chantiers[0];
-        }
-        L.push({ kind, src: l, uid: kind + ':' + l.id, auto, a, chantier, alloc: [], ab: 0 });
+        if ((!chantier || !chantiers.includes(chantier)) && chantiers.length === 1) chantier = chantiers[0];
+        L.push({ kind, src: l, uid: kind + ':' + l.id, auto, a, chantier: chantier || '' });
       }
     }
 
@@ -350,152 +351,186 @@
     }
     function findAB(chantier, role) {
       const c = elements.filter(e => e.p.cp === 'AB' && (!chantier || e.p.chantier === chantier) && AB_ROLE[role].re.test(e.designation || ''));
-      const c2 = role === 'RES' ? c.filter(x => !/individuel|collectif|PDR|poste|\bCI\b|\bCM\b|montante|immeuble/i.test(x.designation)) : c;
+      const c2 = role === 'RES' ? c.filter(x => !/individuel|collectif|PDR|poste|\bCI\b|\bCM\b|montante|immeuble|\bBR[IC]\b/i.test(x.designation)) : c;
       const pick = c2.length ? c2 : c;
       return { cp: 'AB', eotp: pick.length ? pick[0].code : null, multiple: pick.length > 1, all: pick.map(x => x.code), label: AB_ROLE[role].label };
     }
-    const missing = {};
+    const seenMsg = {};
     function target(chantier, role, isAB) {
       const t = isAB ? findAB(chantier, role) : findCP(chantier, ROLE_CP[role]);
       const key = (chantier || '?') + '|' + role + '|' + (isAB ? 'AB' : 'CP');
-      if (!t.eotp && !missing[key]) {
-        missing[key] = 1;
+      if (!t.eotp && !seenMsg[key]) {
+        seenMsg[key] = 1;
         add('rouge', isAB
           ? `Élément « ${t.label} » absent de la liste SAP${chantier ? ' (' + chantier + ')' : ''} : à créer ou à vérifier.`
           : `CP ${t.cp} à créer${chantier ? ' (' + chantier + ')' : ''} : aucun élément d'OTP en CP ${ROLE_CP[role].join(' ou ')} dans la liste SAP.`);
-      } else if (t.multiple && !missing[key + 'm']) {
-        missing[key + 'm'] = 1;
-        add('orange', `Plusieurs EOTP possibles pour ${isAB ? t.label : 'le CP ' + t.cp} : ${t.all.join(', ')}. ${t.eotp} retenu par défaut — forcer si besoin.`);
+      } else if (t.multiple && !seenMsg[key + 'm']) {
+        seenMsg[key + 'm'] = 1;
+        add('orange', `Plusieurs EOTP possibles pour ${isAB ? t.label : 'le CP ' + t.cp} : ${t.all.join(', ')}. ${t.eotp} retenu par défaut — modifier la répartition si besoin.`);
       }
+      // colonne de repli quand l'EOTP n'existe pas : « CP 23 à créer »
+      t.col = t.eotp || (isAB ? `${t.label} (à créer)` : `CP ${t.cp} à créer`);
+      t.toCreate = !t.eotp;
       return t;
     }
-    const qtyOf = x => x.a.type === 'RES' ? (+x.a.longueur || 0) : 1;
 
     if (!eotps.length) add('rouge', "Aucun EOTP : charger au moins une capture SAP (structure du projet ou écran ORC).");
     else if (state.eotpVerified === false) add('orange', "Liste des EOTP lue sur capture : à vérifier par rapport à SAP puis cocher « Liste vérifiée » (onglet Captures SAP).");
 
-    // 2. lignes ignorées / forcées / non classées
+    // 2. lignes actives
     const active = [];
     for (const x of L) {
       if (x.a.ignore) continue;
-      if (x.a.eotp) {
-        const p = parseEotpCode(x.a.eotp);
-        x.alloc.push({ eotp: x.a.eotp, cp: p ? p.cp : null, qty: qtyOf(x), forced: true });
-        continue;
-      }
-      if (x.a.type === 'AUTRE') { add('rouge', `Ligne ${x.kind} ${x.src.id} (« ${x.src.fonction} ») non classée : choisir l'EOTP (forçage).`, x.uid); continue; }
-      if (!x.chantier && chantiers.length > 1) { add('rouge', `Ligne ${x.kind} ${x.src.id} : chantier (C1, C2…) inconnu, choisir l'EOTP (forçage).`, x.uid); continue; }
+      if (x.a.type === 'AUTRE') { add('rouge', `Ligne ${x.kind} ${x.src.id} (« ${x.src.fonction} ») non classée : forcer son type (onglet Tronçons).`, x.uid); continue; }
+      if (!x.chantier && chantiers.length > 1) { add('rouge', `Ligne ${x.kind} ${x.src.id} : chantier (C1, C2…) inconnu.`, x.uid); continue; }
       if (x.a.type === 'RES' && !(x.a.longueur > 0)) add('orange', `Ligne ${x.kind} ${x.src.id} : longueur installée nulle ou absente.`, x.uid);
       active.push(x);
     }
+    const fam = t => t === 'RES' ? 'RES' : t; // famille : réseau, BI, BC, CI, CM
+    const unitOf = t => t === 'RES' ? 'm' : 'u';
 
-    // 3. calcul par chantier
-    const pools = []; // pour le schéma et le choix AB
-    const pending = new Set(); // EOTP dont l'AB n'est pas encore réparti
-    const pendingQty = {};      // quantité de dépose encore à basculer en AB, par EOTP de renouvellement
-    const byCh = {};
-    active.forEach(x => { (byCh[x.chantier || '?'] = byCh[x.chantier || '?'] || []).push(x); });
-    for (const ch of Object.keys(byCh)) {
-      const xs = byCh[ch];
-      const chantier = ch === '?' ? null : ch;
-      // ----- Réseau -----
-      const poseTub = xs.filter(x => x.kind === 'pose' && x.a.type === 'RES' && x.a.tubage);
-      const poseHT = xs.filter(x => x.kind === 'pose' && x.a.type === 'RES' && !x.a.tubage);
-      const depTub = xs.filter(x => x.kind === 'depose' && x.a.type === 'RES' && x.a.tubage);
-      const depNT = xs.filter(x => x.kind === 'depose' && x.a.type === 'RES' && !x.a.tubage);
-      const sum = arr => arr.reduce((s, x) => s + (+x.a.longueur || 0), 0);
-      if (poseTub.length + poseHT.length + depTub.length + depNT.length) {
-        const P_tub = sum(poseTub), D_tub = sum(depTub);
-        const R23 = Math.min(P_tub, D_tub);
-        const t23 = (poseTub.length || depTub.length) ? target(chantier, 'RES_TUB') : null;
-        const t22 = target(chantier, 'RES_HT');
-        const tAB = (D_tub - R23 > EPS || depNT.length) ? target(chantier, 'RES', true) : null;
-        // pose tubée : CP23 jusqu'à R23, le surplus en CP22 (choix CA possible via split22)
-        let userCP23 = 0; const autoL = [];
-        for (const x of poseTub) {
-          const s = choices.split22[x.uid];
-          if (s != null && s !== '') { const v = Math.max(0, Math.min(+s, x.a.longueur)); x.split22 = v; x.split22User = true; userCP23 += x.a.longueur - v; }
-          else autoL.push(x);
-        }
-        let left = Math.max(0, R23 - userCP23);
-        for (const x of autoL) { const c23 = Math.min(x.a.longueur, left); left -= c23; x.split22 = r2(x.a.longueur - c23); }
-        let poseCP23 = 0, surplus = 0;
-        for (const x of poseTub) {
-          const c23 = x.a.longueur - x.split22;
-          poseCP23 += c23; surplus += x.split22;
-          if (c23 > EPS) x.alloc.push({ eotp: t23 && t23.eotp, cp: t23 && t23.cp, qty: r2(c23) });
-          if (x.split22 > EPS) x.alloc.push({ eotp: t22.eotp, cp: t22.cp, qty: r2(x.split22), note: 'surplus tubage' });
-        }
-        if (Math.abs(poseCP23 - R23) > EPS && poseTub.length)
-          add('orange', `Répartition de la pose tubée modifiée : ${fr(poseCP23)} m en CP 23 au lieu de ${fr(R23)} m.`);
-        for (const x of poseHT) x.alloc.push({ eotp: t22.eotp, cp: t22.cp, qty: r2(x.a.longueur) });
-        const P22 = sum(poseHT) + surplus;
-        const D_nt = sum(depNT);
-        const R22 = Math.min(P22, D_nt);
-        let ab23 = D_tub - R23, ab22 = D_nt - R22;
-        // tolérance : petit surplus de dépose (< 1 m) laissé sur l'EOTP de renouvellement, sauf si le CA a déjà choisi de l'AB
-        const hasChoice = arr => arr.some(x => +choices.ab[x.uid] > 0);
-        let tol23 = 0, tol22 = 0;
-        if (ab23 > EPS && ab23 < TOL_AB && !hasChoice(depTub)) { tol23 = ab23; ab23 = 0; add('info', `Réseau tubé (CP 23) : écart de ${fr(tol23)} m entre dépose tubée et PE tubé, toléré (moins de ${TOL_AB} m) et laissé en CP 23.`); }
-        if (ab22 > EPS && ab22 < TOL_AB && !hasChoice(depNT)) { tol22 = ab22; ab22 = 0; add('info', `Réseau hors tubage (CP 22) : écart de ${fr(tol22)} m toléré (moins de ${TOL_AB} m) et laissé en CP 22.`); }
-        // dépose : le CA choisit les tronçons qui partent en AB
-        const deal = (arr, tCP, need, poolName) => {
-          let chosen = 0;
-          for (const x of arr) {
-            let ab = +choices.ab[x.uid] || 0;
-            ab = Math.max(0, Math.min(ab, x.a.longueur));
-            x.ab = ab; chosen += ab;
-            const keep = x.a.longueur - ab;
-            if (keep > EPS) x.alloc.push({ eotp: tCP && tCP.eotp, cp: tCP && tCP.cp, qty: r2(keep) });
-            if (ab > EPS) x.alloc.push({ eotp: tAB && tAB.eotp, cp: 'AB', qty: r2(ab) });
+    // 3. pose par EOTP (tableau « Description technique des EOTP »)
+    const poseMap = {};
+    for (const x of active.filter(y => y.kind === 'pose')) {
+      const role = x.a.type === 'RES' ? (x.a.tubage ? 'RES_TUB' : 'RES_HT') : x.a.type;
+      const t = target(x.chantier, role);
+      const k = t.col;
+      const p = poseMap[k] = poseMap[k] || { eotp: t.eotp, col: k, cp: t.cp, toCreate: t.toCreate, role, type: x.a.type, fam: fam(x.a.type), chantier: x.chantier, unit: unitOf(x.a.type), exact: 0, lines: [], brtPDR: false };
+      p.exact += x.a.type === 'RES' ? (+x.a.longueur || 0) : 1;
+      p.lines.push(x.uid); x.eotp = k;
+      if (x.a.brtPDR) p.brtPDR = true;
+    }
+    // pose forcée sur une colonne sans tronçon (ex. CP 15 : restructuration) et colonnes ajoutées par le CA
+    const extra = [];
+    for (const e of elements) if (e.p.cp === '15') extra.push({ col: e.code, fam: 'RES' });
+    for (const [f, arr] of Object.entries(state.extraCols || {})) for (const c of arr || []) extra.push({ col: c, fam: f });
+    // EOTP présents dans l'écran ORC : affichés en colonne pour voir la valeur saisie dans SAP
+    const famOfNat = (nat, mat) => mat ? 'RES' : /^P21/.test(nat) ? 'BI' : /^P23/.test(nat) ? 'BC' : /^P24/.test(nat) ? 'CM' : /^P25/.test(nat) ? 'CI' : null;
+    for (const d of ((state.orc && state.orc.deposeRows) || [])) { const f = famOfNat(d.nat || '', d.mat); if (f && parseEotpCode(d.eotp)) extra.push({ col: d.eotp, fam: f }); }
+    for (const k of Object.keys(forces)) if (k.startsWith('POSE:')) { const c = k.slice(5); if (!poseMap[c]) { const pc = parseEotpCode(c); extra.push({ col: c, fam: pc ? famOfCp(pc.cp) : 'RES', pose: true }); } }
+    for (const x of extra) {
+      const pc = parseEotpCode(x.col);
+      if (!poseMap[x.col] && (x.pose || forces['POSE:' + x.col])) poseMap[x.col] = { eotp: pc ? x.col : null, col: x.col, cp: pc ? pc.cp : null, toCreate: !pc, role: 'EXTRA', type: x.fam === 'RES' ? 'RES' : x.fam, fam: x.fam, chantier: pc ? pc.chantier : (chantiers[0] || ''), unit: x.fam === 'RES' ? 'm' : 'u', exact: 0, lines: [], brtPDR: false };
+    }
+    const pose = Object.values(poseMap).map(p => {
+      p.exact = r2(p.exact);
+      p.auto = ceilQ(p.exact, p.unit);
+      const f = forces['POSE:' + p.col];
+      p.qty = f ? +f.value : p.auto; p.forced = !!f;
+      p.categorie = categorie(p.cp, p.type, p.brtPDR);
+      return p;
+    });
+
+    // 4. biens déposés (matière + IN + année pour le réseau ; un bien par type pour les branchements)
+    const bienMap = {};
+    for (const x of active.filter(y => y.kind === 'depose')) {
+      const t = x.a.type, mat = MAT_SAP[x.a.matiere] || x.a.matiere;
+      const key = t === 'RES' ? `${x.chantier}|RES|${mat}|${x.a.IN || '?'}|${x.a.annee || '?'}` : `${x.chantier}|${t}`;
+      const b = bienMap[key] = bienMap[key] || { key, chantier: x.chantier, type: t, fam: fam(t), mat: t === 'RES' ? mat : '', IN: t === 'RES' ? x.a.IN : '', annee: t === 'RES' ? x.a.annee : '',
+        insee: x.src.insee, unit: unitOf(t), exact: 0, exactTube: 0, lines: [] };
+      const q = t === 'RES' ? (+x.a.longueur || 0) : 1;
+      b.exact += q; if (x.a.tubage) b.exactTube += q;
+      b.lines.push(x.uid); x.bien = key;
+    }
+    const biens = Object.values(bienMap).map(b => {
+      b.exact = r2(b.exact); b.exactTube = r2(b.exactTube);
+      b.cap = ceilQ(b.exact, b.unit);
+      b.tubeCap = Math.min(b.cap, ceilQ(b.exactTube, b.unit));
+      b.label = b.type === 'RES' ? `Réseau ${b.mat} ${b.IN || '?'} ${b.annee || '?'}` : TYPE_LABEL[b.type];
+      b.cells = {}; b.auto = {};
+      return b;
+    });
+
+    // 5. répartition automatique : chaque EOTP de renouvellement reçoit en dépose la quantité posée ; le reste du bien part en AB
+    //    réseau : le CP 23 (tubage) puise d'abord dans la partie tubée des biens, le CP 22 dans la partie non tubée
+    const infoBrt = new Set();
+    for (const ch of [...new Set(pose.map(p => p.chantier).concat(biens.map(b => b.chantier)))]) {
+      for (const F of ['RES', 'BI', 'BC', 'CI', 'CM']) {
+        const bs = biens.filter(b => b.chantier === ch && b.fam === F);
+        const ps = pose.filter(p => p.chantier === ch && p.fam === F);
+        if (!bs.length && !ps.length) continue;
+        const rem = {}, tub = {};
+        bs.forEach(b => { rem[b.key] = b.cap; tub[b.key] = b.tubeCap; });
+        const take = (b, col, q) => { if (q <= 0) return 0; b.auto[col] = (b.auto[col] || 0) + q; rem[b.key] -= q; tub[b.key] = Math.min(tub[b.key], rem[b.key]); return q; };
+        const order = (ps.find(p => p.role === 'RES_TUB') ? ['RES_TUB'] : []).concat(ps.filter(p => p.role !== 'RES_TUB').map(p => p.role));
+        for (const role of [...new Set(order)]) {
+          const p = ps.find(q => q.role === role); if (!p) continue;
+          let need = p.qty;
+          const byTube = (x, y) => tub[y.key] - tub[x.key] || rem[y.key] - rem[x.key];
+          const byNonTube = (x, y) => (rem[y.key] - tub[y.key]) - (rem[x.key] - tub[x.key]) || rem[y.key] - rem[x.key];
+          if (role === 'RES_TUB') {
+            for (const b of bs.slice().sort(byTube)) need -= take(b, p.col, Math.min(need, tub[b.key]));
+            for (const b of bs.slice().sort(byNonTube)) need -= take(b, p.col, Math.min(need, rem[b.key]));
+          } else {
+            for (const b of bs.slice().sort(byNonTube)) need -= take(b, p.col, Math.min(need, rem[b.key] - tub[b.key]));
+            for (const b of bs.slice().sort(byTube)) need -= take(b, p.col, Math.min(need, rem[b.key]));
           }
-          const rest = r2(need - chosen);
-          if (Math.abs(rest) > EPS) { pending.add(tCP && tCP.eotp); if (tAB) pending.add(tAB.eotp); }
-          if (rest > EPS && tCP && tCP.eotp) pendingQty[tCP.eotp] = (pendingQty[tCP.eotp] || 0) + rest;
-          if (Math.abs(rest) > EPS)
-            add('orange', rest > 0
-              ? `Affecter ${fr(rest)} m d'abandon à ${tAB && tAB.eotp ? tAB.eotp : "l'élément AB réseau (à créer dans SAP)"} — ${poolName} : choisir les tronçons concernés dans l'onglet Tronçons.`
-              : `${poolName} : ${fr(-rest)} m de trop mis en abandon sur ${tAB && tAB.eotp ? tAB.eotp : "l'élément AB"}.`, 'pool:' + ch + ':' + poolName);
-          return { need: r2(need), chosen: r2(chosen), rest };
-        };
-        const s23 = deal(depTub, t23, ab23, 'Réseau tubé (CP 23)');
-        const s22 = deal(depNT, t22, ab22, 'Réseau hors tubage (CP 22)');
-        pools.push({ chantier: ch, kind: 'RES', label: 'Réseau', unit: 'm',
-          P_tub: r2(P_tub), D_tub: r2(D_tub), R23: r2(R23), P22: r2(P22), D_nt: r2(D_nt), R22: r2(R22), R23dep: r2(R23 + tol23), R22dep: r2(R22 + tol22),
-          AB23: r2(ab23), AB22: r2(ab22), surplusTub: r2(surplus), s23, s22 });
-      }
-      // ----- Branchements / CI / CM (en nombre) -----
-      for (const role of ['BI', 'BC', 'CI', 'CM']) {
-        const P = xs.filter(x => x.kind === 'pose' && x.a.type === role);
-        const D = xs.filter(x => x.kind === 'depose' && x.a.type === role);
-        if (!P.length && !D.length) continue;
-        const t = target(chantier, role);
-        const R = Math.min(P.length, D.length);
-        const need = D.length - R;
-        const tAB = need > 0 ? target(chantier, role, true) : null;
-        for (const x of P) x.alloc.push({ eotp: t.eotp, cp: t.cp, qty: 1 });
-        let chosen = 0;
-        for (const x of D) {
-          const ab = choices.ab[x.uid] ? 1 : 0; x.ab = ab; chosen += ab;
-          if (ab) x.alloc.push({ eotp: (tAB || target(chantier, role, true)).eotp, cp: 'AB', qty: 1 });
-          else x.alloc.push({ eotp: t.eotp, cp: t.cp, qty: 1 });
+          // branchements posés sans branchements déposés dans la carto : dépose proposée = pose (à vérifier)
+          if (need > 0 && F !== 'RES' && !bs.length) {
+            const key = `${ch}|${F}`;
+            const b = { key, chantier: ch, type: F, fam: F, mat: '', IN: '', annee: '', insee: '', unit: 'u', exact: 0, exactTube: 0, lines: [], cap: need, tubeCap: 0,
+              label: TYPE_LABEL[F], cells: {}, auto: {}, virtuel: true };
+            biens.push(b); bs.push(b); rem[key] = need; tub[key] = 0;
+            need -= take(b, p.col, need);
+            infoBrt.add(`${TYPE_LABEL[F]} : aucun branchement déposé dans la carto — dépose proposée égale à la pose (${b.cap}), à vérifier dans SAP.`);
+          }
         }
-        if (chosen !== need) { pending.add(t.eotp); if (tAB && tAB.eotp) pending.add(tAB.eotp); }
-        if (need > chosen && t.eotp) pendingQty[t.eotp] = (pendingQty[t.eotp] || 0) + (need - chosen);
-        if (chosen !== need)
-          add('orange', chosen < need
-            ? `Affecter ${(n => `${n} ${role === 'CI' || role === 'CM' ? 'ouvrage' : 'branchement'}${n > 1 ? 's' : ''}`)(need - chosen)} d'abandon à ${tAB && tAB.eotp ? tAB.eotp : `l'élément « ${AB_ROLE[role].label} » (à créer dans SAP)`} — ${TYPE_LABEL[role]} : cocher les lignes concernées dans l'onglet Tronçons.`
-            : `${TYPE_LABEL[role]} : ${plur(chosen - need, role === 'CI' || role === 'CM' ? 'ouvrage' : 'branchement')} de trop mis en AB.`, 'pool:' + ch + ':' + role);
-        pools.push({ chantier: ch, kind: role, label: TYPE_LABEL[role], unit: 'u', P: P.length, D: D.length, R, AB: need, chosen });
+        // reste des biens -> AB
+        const tAB = bs.some(b => rem[b.key] > 0) ? target(ch, F, true) : null;
+        for (const b of bs) if (rem[b.key] > 0) take(b, tAB.col, rem[b.key]);
+        if (tAB) bs.forEach(b => { b.abCol = tAB.col; });
       }
     }
+    infoBrt.forEach(m => add('info', m));
 
-    // 4. PDR : détectés dans les désignations SAP + ajouts manuels
+    // 6. cases forcées par le CA, reste à répartir
+    const cols = {}; // colonne -> infos
+    const addCol = (col, info) => { cols[col] = cols[col] || { col, eotp: info.eotp || null, cp: info.cp || null, toCreate: !!info.toCreate, fam: info.fam }; };
+    pose.forEach(p => addCol(p.col, p));
+    for (const x of extra) { const pc = parseEotpCode(x.col); addCol(x.col, { eotp: pc ? x.col : null, cp: pc ? pc.cp : null, toCreate: !pc, fam: x.fam }); }
+    for (const b of biens) {
+      for (const [col, q] of Object.entries(b.auto)) b.cells[col] = q;
+      for (const k of Object.keys(forces)) {
+        if (!k.startsWith('REP:' + b.key + '|')) continue;
+        const col = k.slice(('REP:' + b.key + '|').length);
+        b.cells[col] = +forces[k].value;
+      }
+      for (const col of Object.keys(b.cells)) {
+        const pc = parseEotpCode(col);
+        addCol(col, { eotp: pc ? col : null, cp: pc ? pc.cp : (col.match(/CP (\w+)/) || [])[1] || (/AB/.test(col) ? 'AB' : null), toCreate: !pc, fam: b.fam });
+      }
+      b.total = Object.values(b.cells).reduce((s, v) => s + (+v || 0), 0);
+      b.reste = r2(b.cap - b.total);
+      const u = n => b.unit === 'm' ? fr(n) + ' m' : String(n);
+      if (b.reste > 0) add('orange', `${b.label} : reste ${u(b.reste)} à répartir.`, 'bien:' + b.key);
+      if (b.reste < 0) add('orange', `${b.label} : ${u(-b.reste)} répartis en trop (carto : ${u(b.cap)}).`, 'bien:' + b.key);
+    }
+    // consigne explicite d'abandon
+    for (const b of biens) {
+      const ab = b.abCol && b.cells[b.abCol];
+      if (ab > 0) add('info', `Affecter ${b.unit === 'm' ? fr(ab) + ' m' : ab + ' ' + (b.type === 'CI' || b.type === 'CM' ? 'ouvrage' : 'branchement') + (ab > 1 ? 's' : '')} d'abandon à ${b.abCol} — ${b.label}.`);
+    }
+
+    // 7. totaux par colonne (EOTP) et test ±10 % sur les EOTP de renouvellement (VERIF_IMMO, SAISIE SAP - VERIF, colonne V)
+    const eotpTotals = Object.values(cols).map(c => {
+      const p = pose.find(x => x.col === c.col);
+      const dep = biens.reduce((s, b) => s + (+b.cells[c.col] || 0), 0);
+      const e = { ...c, pose: p ? p.qty : 0, depose: r2(dep), unit: p ? p.unit : (biens.find(b => b.cells[c.col] != null) || {}).unit || 'm' };
+      e.renouv = RENEW_CP.includes(e.cp);
+      e.ecart = e.pose > 0 ? (e.depose - e.pose) / e.pose : (e.depose > 0 ? Infinity : null);
+      if (e.renouv && (e.pose > 0 || e.depose > 0)) {
+        e.ok10 = e.depose > 0.9 * e.pose && e.depose < 1.1 * e.pose;
+        const q = n => e.unit === 'm' ? `${fr(n)} m` : `${n} ${['27'].includes(e.cp) ? 'ouvrage' : 'branchement'}${n > 1 ? 's' : ''}`;
+        if (!e.ok10) add('rouge', `${c.col} (CP ${e.cp}) : écart pose/dépose de ${e.ecart === Infinity ? 'plus de 100' : fr(Math.abs(e.ecart) * 100)} % (> 10 %) — pose : ${q(e.pose)}, dépose : ${q(e.depose)}.`, 'eotp:' + c.col);
+      }
+      return e;
+    });
+
+    // 8. PDR : détectés dans les désignations SAP + ajouts manuels
     const pdr = [];
     for (const e of elements) {
       const des = String(e.designation || '');
       const m = des.match(/D\d{5}-PDR\d{5}/i);
-      // poste reconnu par son n° (D00000-PDR00000) ou, à défaut, par le mot « poste » / « PDR » dans la désignation
       const isPoste = m || /\bposte\b|\bPDR\b/i.test(des);
       if (isPoste) pdr.push({ key: 'auto:' + e.code, pdr: m ? m[0].toUpperCase() : 'n° non indiqué (' + des.replace(/\(abandon\)/i, '').trim() + ')', eotp: e.code, nature: e.p.cp === 'AB' ? 'Abandon' : 'Pose', auto: true, sansNumero: !m });
     }
@@ -504,86 +539,37 @@
       for (const f of ['pdr', 'eotp', 'nature']) { const k = `P:${p.key}:${f}`; if (forces[k]) { p['auto_' + f] = p[f]; p[f] = forces[k].value; } }
       const pp = parseEotpCode(p.eotp || '');
       p.cp = pp ? pp.cp : null;
-      p.categorie = p.nature === 'Abandon' ? '—' : categorie(p.cp, 'PDR');
+      p.categorie = categorie(p.cp, 'PDR');
     }
     if (pdr.length) add('info', `${pdr.length} PDR détecté(s) : ${pdr.map(p => p.pdr).join(', ')}.`);
 
-    // 5. récapitulatif des lignes d'immo
-    const recapMap = {};
-    for (const x of L) {
-      if (x.a.ignore) continue;
-      for (const al of x.alloc) {
-        const action = x.kind === 'pose' ? 'POSE' : 'DEPOSE';
-        const t = x.a.type;
-        let libelle;
-        if (t === 'RES') libelle = `Réseau ${x.a.matiere} ${x.a.IN || '?'} ${x.a.annee || '?'} ${x.src.insee}`;
-        else if (x.kind === 'pose') libelle = `${TYPE_LABEL[t]} ${x.a.annee || '?'} ${x.src.insee}`;
-        else libelle = `${TYPE_LABEL[t]} ${x.src.insee}`; // dépose brt : sans année (comme VERIF_IMMO)
-        const key = `${al.eotp || 'SANS-EOTP'}|${action}|${libelle}|${x.a.brtPDR ? 'BRTPDR' : ''}`;
-        const r = recapMap[key] = recapMap[key] || { key, eotp: al.eotp || '', cp: al.cp, action, type: t, libelle,
-          matiere: t === 'RES' ? x.a.matiere : '', IN: t === 'RES' ? x.a.IN : '', annee: (t === 'RES' || x.kind === 'pose') ? x.a.annee : '',
-          insee: x.src.insee, unit: t === 'RES' ? 'm' : 'u', qty: 0, brtPDR: !!x.a.brtPDR, lines: [] };
-        r.qty += al.qty; r.lines.push(x.uid);
-      }
+    // 9. lignes à saisir dans SAP (format écran ORC)
+    const sapDepose = [];
+    for (const b of biens) for (const [col, q] of Object.entries(b.cells)) if (+q > 0) {
+      const c = cols[col] || {};
+      sapDepose.push({ col, eotp: c.eotp, cp: c.cp, bien: b.key, label: b.label, type: b.type, mat: b.mat, IN: b.IN, annee: b.annee, qty: +q, unit: b.unit, categorie: categorie(c.cp, b.type), forced: !!forces['REP:' + b.key + '|' + col] });
     }
-    const recap = Object.values(recapMap).map(r => {
-      r.qty = r2(r.qty);
-      r.categorie = categorie(r.cp, r.type, r.brtPDR);
-      r.autoQty = r.qty; r.autoCat = r.categorie;
-      const kq = `R:${r.key}:qte`, kc = `R:${r.key}:cat`;
-      if (forces[kq]) { r.qty = +forces[kq].value; r.forcedQty = true; }
-      // quantité à saisir dans SAP : mètres arrondis à l'unité supérieure (valeur forcée reprise telle quelle)
-      r.qtySAP = (r.unit === 'm' && !r.forcedQty) ? Math.ceil(r.qty - 1e-9) : r.qty;
-      if (forces[kc]) { r.categorie = forces[kc].value; r.forcedCat = true; }
-      if (!r.eotp) add('rouge', `${r.libelle} (${r.action.toLowerCase()}) : pas d'EOTP — à créer dans SAP ou à forcer.`, 'recap:' + r.key);
-      return r;
-    }).sort((a, b) => (a.eotp || 'ZZ').localeCompare(b.eotp || 'ZZ') || a.action.localeCompare(b.action) || a.libelle.localeCompare(b.libelle));
 
-    // 6. contrôle ±10 % pose/dépose sur les EOTP de renouvellement (comme VERIF_IMMO, colonne V)
-    const perEotp = {};
-    for (const r of recap) {
-      if (!r.eotp) continue;
-      const e = perEotp[r.eotp] = perEotp[r.eotp] || { eotp: r.eotp, cp: r.cp, unit: r.unit, pose: 0, depose: 0 };
-      e[r.action === 'POSE' ? 'pose' : 'depose'] += r.qty;
-    }
-    const eotpTotals = Object.values(perEotp).map(e => {
-      e.pose = r2(e.pose); e.depose = r2(e.depose);
-      e.renouv = RENEW_CP.includes(e.cp);
-      e.pending = pending.has(e.eotp);
-      // dépose retenue = dépose affectée moins la part qui doit encore partir en AB (le test ne dépend pas du choix des tronçons)
-      e.deposeAffectee = e.depose;
-      e.abAChoisir = r2(pendingQty[e.eotp] || 0);
-      e.depose = r2(e.depose - e.abAChoisir);
-      // écart = (dépose − pose) / pose
-      e.ecart = e.pose > 0 ? (e.depose - e.pose) / e.pose : (e.depose > 0 ? Infinity : null);
-      if (e.renouv && (e.pose > 0 || e.depose > 0)) {
-        e.ok10 = e.depose > 0.9 * e.pose && e.depose < 1.1 * e.pose;
-        const q = n => e.unit === 'm' ? `${fr(n)} m` : `${n} ${['27'].includes(e.cp) ? 'ouvrage' : 'branchement'}${n > 1 ? 's' : ''}`;
-        if (!e.ok10) add('rouge', `${e.eotp} (CP ${e.cp}) : écart pose/dépose de ${e.ecart === Infinity ? 'plus de 100' : fr(Math.abs(e.ecart) * 100)} % (> 10 %) — pose : ${q(e.pose)}, dépose renouvelée : ${q(e.depose)}.`, 'eotp:' + e.eotp);
-      }
-      return e;
-    }).sort((a, b) => a.eotp.localeCompare(b.eotp));
-
-    // 7. EOTP non utilisés (information, comme « EOTP A EXCLURE »)
-    // un EOTP qui attend le choix des tronçons AB n'est pas « à exclure »
-    const used = new Set(recap.map(r => r.eotp).concat(pdr.map(p => p.eotp)).concat([...pending]));
+    // 10. EOTP non utilisés (information)
+    const used = new Set(Object.keys(cols).concat(pdr.map(p => p.eotp)));
     const unused = elements.filter(e => !used.has(e.code));
-    for (const e of unused) add('info', `EOTP A EXCLURE : ${e.code} (${e.designation || 'sans désignation'}) — aucun tronçon affecté.`, 'eotp:' + e.code);
+    for (const e of unused) add('info', `EOTP A EXCLURE : ${e.code} (${e.designation || 'sans désignation'}) — rien à y affecter.`, 'eotp:' + e.code);
 
-    // 8. écran ORC (facultatif)
-    let orc = null;
+    const R = { lines: L, pose, biens, cols: Object.values(cols), eotpTotals, sapDepose, pdr, controls, unused, chantiers,
+      elements: elements.map(e => ({ code: e.code, designation: e.designation, cp: e.p.cp })) };
+
+    // 11. écran ORC (facultatif)
     if (state.orc && ((state.orc.eotpRows || []).length || (state.orc.deposeRows || []).length)) {
-      orc = compareOrc({ recap, pdr }, state.orc);
+      R.orc = compareOrc(R, state.orc);
       if (state.orcVerified === false) add('orange', "Écran ORC lu sur capture : à vérifier par rapport à SAP puis cocher « Écran ORC vérifié » (onglet Captures SAP).");
-      if (orc.nbEcarts) add('orange', `Écran ORC : ${orc.nbEcarts} ligne${orc.nbEcarts > 1 ? 's' : ''} différente${orc.nbEcarts > 1 ? 's' : ''} de la proposition de l'appli — voir « Comparaison avec l'écran ORC ».`);
+      if (R.orc.nbEcarts) add('orange', `Écran ORC : ${R.orc.nbEcarts} valeur${R.orc.nbEcarts > 1 ? 's' : ''} saisie${R.orc.nbEcarts > 1 ? 's' : ''} dans SAP différente${R.orc.nbEcarts > 1 ? 's' : ''} de la répartition proposée.`);
     }
 
-    // 9. verdict
+    // 12. verdict
     const bad = controls.filter(c => c.level === 'rouge' || c.level === 'orange').length;
-    const autoVerdict = bad ? 'ÉCARTS À CORRIGER' : 'VALIDATION OK';
-    const verdict = forces.VERDICT ? forces.VERDICT.value : autoVerdict;
-
-    return { lines: L, recap, eotpTotals, pools, pdr, orc, controls, unused, verdict, autoVerdict, chantiers, elements: elements.map(e => ({ code: e.code, designation: e.designation, cp: e.p.cp })) };
+    R.autoVerdict = bad ? 'ÉCARTS À CORRIGER' : 'VALIDATION OK';
+    R.verdict = forces.VERDICT ? forces.VERDICT.value : R.autoVerdict;
+    return R;
   }
 
   // ---------- Écran SAP « ORC – Dépose des immobilisations » ----------
@@ -612,7 +598,7 @@
       }
       // ligne du tableau Dépose : INSEE commune EOTP nature désignation [mat IN libellé diamètre] [année] prév unité réel unité date
       const insee = (before.match(/^(\d{5})/) || [])[1] || '';
-      const tail = after.match(/(?:\s(\d{4}))?\s+([\d.,]+)\s+(M|PCE|U|ML)\s+([\d.,]+)?\s*(M|PCE|U|ML)?\s*(\d{2}[./]\d{2}[./]\d{4})?\s*$/i);
+      const tail = after.match(/(?:\s(\d{4}))?\s+([\d.,]+)\s+(M|PCE|U|ML)\s+([\d.,]+)?\s*([A-Z]{1,4})?\s*(\d{2}[./]\d{2}[./]\d{4})?\s*$/i);
       if (!tail) continue;
       let mid = after.slice(0, tail.index).trim();
       const natM = mid.match(/^([A-Z0-9]{3,6})\s+/i);
@@ -627,35 +613,29 @@
     return { eotpRows, deposeRows };
   }
 
-  // Comparaison écran ORC / proposition de l'appli (INSEE ignoré : la carto donne l'arrondissement, SAP la commune)
-  const MAT_SAP = { '(PE)': 'PE', '(Ac)': 'AC', '(Autre)': 'A' };
+  // Comparaison écran ORC / répartition proposée (INSEE ignoré : la carto donne l'arrondissement, SAP la commune)
+  const orcKey = (eotp, mat, IN, annee) => mat ? `${eotp}|${mat}|${IN}|${annee}` : `${eotp}|-`;
   function compareOrc(R, orc) {
-    const out = { pose: [], depose: [] };
+    const out = { pose: [], depose: [], inventaire: [], cellMap: {}, poseMap: {} };
     if (!orc) return out;
-    const ceil = (q, u) => u === 'm' ? Math.ceil(q - 1e-9) : q;
     // pose par EOTP
     const poseApp = {};
-    for (const r of R.recap) if (r.action === 'POSE' && r.eotp) poseApp[r.eotp] = (poseApp[r.eotp] || 0) + r.qtySAP;
+    for (const p of R.pose) if (p.eotp) poseApp[p.eotp] = (poseApp[p.eotp] || 0) + p.qty;
     const seenP = new Set();
     for (const e of orc.eotpRows || []) {
-      seenP.add(e.eotp);
+      seenP.add(e.eotp); out.poseMap[e.eotp] = e.reel;
       const app = poseApp[e.eotp] ?? 0;
       out.pose.push({ ...e, app, ok: e.reel != null && Math.abs(e.reel - app) < EPS });
     }
-    for (const k of Object.keys(poseApp)) if (!seenP.has(k)) out.pose.push({ eotp: k, prev: null, reel: null, unit: (R.recap.find(r => r.eotp === k && r.action === 'POSE') || {}).unit === 'm' ? 'M' : 'PCE', nat: '', app: poseApp[k], ok: false, absent: true });
-    // dépose par EOTP + matière + IN + année (réseau) ; par EOTP pour branchements et postes
+    for (const k of Object.keys(poseApp)) if (!seenP.has(k)) out.pose.push({ eotp: k, prev: null, reel: null, unit: (R.pose.find(p => p.eotp === k) || {}).unit === 'm' ? 'M' : 'PCE', nat: '', app: poseApp[k], ok: false, absent: true });
+    // dépose : par EOTP + matière + IN + année (réseau), par EOTP (branchements, postes)
     const depApp = {};
-    const keyOf = (eotp, mat, IN, annee) => mat ? `${eotp}|${mat}|${IN}|${annee}` : `${eotp}|-`;
-    for (const r of R.recap) {
-      if (r.action !== 'DEPOSE' || !r.eotp) continue;
-      const k = r.type === 'RES' ? keyOf(r.eotp, MAT_SAP[r.matiere] || r.matiere, r.IN, r.annee) : keyOf(r.eotp);
-      depApp[k] = (depApp[k] || 0) + r.qtySAP;
-    }
-    for (const p of R.pdr || []) if (p.eotp) { const k = keyOf(p.eotp); depApp[k] = (depApp[k] || 0) + 1; }
+    for (const s of R.sapDepose) if (s.eotp) { const k = s.type === 'RES' ? orcKey(s.eotp, s.mat, s.IN, s.annee) : orcKey(s.eotp); depApp[k] = (depApp[k] || 0) + s.qty; }
+    for (const p of R.pdr || []) if (p.eotp) { const k = orcKey(p.eotp); depApp[k] = (depApp[k] || 0) + 1; }
     const seenD = new Set();
     for (const d of orc.deposeRows || []) {
-      const k = keyOf(d.eotp, d.mat, d.IN, d.annee);
-      seenD.add(k);
+      const k = orcKey(d.eotp, d.mat, d.IN, d.annee);
+      seenD.add(k); out.cellMap[k] = (out.cellMap[k] || 0) + (d.reel || 0);
       const app = depApp[k] ?? 0;
       out.depose.push({ ...d, key: k, app, ok: d.reel != null && Math.abs(d.reel - app) < EPS });
     }
@@ -663,10 +643,19 @@
       const [eotp, mat, IN, annee] = k.split('|');
       out.depose.push({ eotp, mat: mat === '-' ? '' : mat, IN: IN || null, annee: annee ? +annee : null, designation: '', prev: null, reel: null, unit: mat !== '-' ? 'M' : 'PCE', app: depApp[k], ok: false, absent: true, key: k });
     }
+    // inventaire : quantité du bien dans SAP (« Qté prév. dépose ») face à la carto
+    const inv = {};
+    for (const d of orc.deposeRows || []) if (d.mat) { const k = `${d.mat}|${d.IN}|${d.annee}`; inv[k] = Math.max(inv[k] || 0, d.prev || 0); }
+    for (const [k, sap] of Object.entries(inv)) {
+      const [mat, IN, annee] = k.split('|');
+      const b = R.biens.find(x => x.type === 'RES' && x.mat === mat && x.IN === IN && String(x.annee) === annee);
+      out.inventaire.push({ mat, IN, annee: +annee, sap, carto: b ? b.cap : 0, ok: b ? Math.abs(b.cap - sap) < EPS : false });
+    }
+    for (const b of R.biens) if (b.type === 'RES' && !inv[`${b.mat}|${b.IN}|${b.annee}`]) out.inventaire.push({ mat: b.mat, IN: b.IN, annee: b.annee, sap: null, carto: b.cap, ok: false });
     out.nbEcarts = out.pose.filter(x => !x.ok).length + out.depose.filter(x => !x.ok).length;
     return out;
   }
 
-  const api = { compute, parseOrcText, compareOrc, parseCarto, parseOcrText, fixEotp, parseEotpCode, classeIN, categorie, autoAttrs, typeOf, TYPE_LABEL, RENEW_CP, yearOf, norm, dateDisp };
+  const api = { compute, MAT_SAP, parseOrcText, compareOrc, parseCarto, parseOcrText, fixEotp, parseEotpCode, classeIN, categorie, autoAttrs, typeOf, TYPE_LABEL, RENEW_CP, yearOf, norm, dateDisp };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.VIEngine = api;
 })(typeof window !== 'undefined' ? window : globalThis);

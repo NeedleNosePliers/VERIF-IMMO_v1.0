@@ -123,3 +123,10 @@ table.tr td.al{white-space:normal;min-width:120px;max-width:170px}
 table.tr td.cm{max-width:120px;overflow:hidden;text-overflow:ellipsis}
 table.tr input.n{width:58px}
 table.tr .fbtn{padding:0 1px}
+
+/* tableau de répartition */
+table.rep th,table.rep td{padding:5px 6px}
+table.rep th{white-space:normal;line-height:1.25;text-align:center}
+table.rep td.num input.n{width:70px}
+input.n.fin{background:var(--force-l);border-color:var(--force);color:var(--force);font-weight:700}
+table.rep tr.ft td{background:#f6f8fa;border-top:2px solid var(--line)}
