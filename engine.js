@@ -371,8 +371,8 @@
     }
     const qtyOf = x => x.a.type === 'RES' ? (+x.a.longueur || 0) : 1;
 
-    if (!eotps.length) add('rouge', "Aucune liste d'EOTP : charger la capture SAP de l'affaire.");
-    else if (state.eotpVerified === false) add('orange', "Liste des EOTP lue sur capture : à vérifier par rapport à SAP puis cocher « Liste vérifiée » (onglet EOTP SAP).");
+    if (!eotps.length) add('rouge', "Aucun EOTP : charger au moins une capture SAP (structure du projet ou écran ORC).");
+    else if (state.eotpVerified === false) add('orange', "Liste des EOTP lue sur capture : à vérifier par rapport à SAP puis cocher « Liste vérifiée » (onglet Captures SAP).");
 
     // 2. lignes ignorées / forcées / non classées
     const active = [];

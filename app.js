@@ -1,7 +1,7 @@
 /* VERIF-IMMO — interface. Tout est traité localement dans le navigateur. */
 (function () {
   'use strict';
-  const VERSION = '2.8';
+  const VERSION = '2.9';
   const APPNAME = 'VERIF-IMMO';
   const E = window.VIEngine;
   const STORE_KEY = 'verifimmo.v1';
@@ -194,7 +194,7 @@
           for (const r of o.eotpRows) if (!a.orc.eotpRows.some(x => x.eotp === r.eotp)) { a.orc.eotpRows.push(r); added++; }
           for (const r of o.deposeRows) if (!a.orc.deposeRows.some(x => sig(x) === sig(r))) { a.orc.deposeRows.push(r); added++; }
           // les EOTP de l'écran ORC complètent la liste des EOTP si besoin
-          for (const r of o.eotpRows.concat(o.deposeRows)) if (!a.eotps.some(e => e.code === r.eotp)) { a.eotps.push({ code: r.eotp, designation: r.designation || '', src: 'ORC' }); a.eotpVerified = false; }
+          for (const r of o.eotpRows.concat(o.deposeRows)) if (!a.eotps.some(e => e.code === r.eotp)) { a.eotps.push({ code: r.eotp, designation: r.designation || '', src: 'ORC' }); }
         } else {
           const rows = E.parseOcrText(data.text);
           for (const r of rows) {
@@ -257,7 +257,7 @@
     const lv = c => R && R.controls.some(x => x.level === c);
     const tabs = [
       ['fichiers', '1. Fichiers carto', (a.pose && a.depose) ? 'ok' : 'rouge'],
-      ['eotp', '2. Captures SAP', a.eotps.length ? ((a.eotpVerified && a.orcVerified !== false) ? 'ok' : 'orange') : 'rouge'],
+      ['eotp', '2. Captures SAP', a.eotps.length ? ((a.eotpVerified !== false && a.orcVerified !== false) ? 'ok' : 'orange') : 'rouge'],
       ['resultat', '3. Résultat', R ? (lv('rouge') ? 'rouge' : lv('orange') ? 'orange' : 'ok') : ''],
       ['troncons', '4. Tronçons', R && R.controls.some(c => c.level === 'orange' && /AB/.test(c.msg)) ? 'orange' : ''],
       ['export', '5. Forçages & export', '']
@@ -305,7 +305,9 @@
     const ocr = ui.ocr ? `<div class="card"><b>${ui.ocr.target === 'orc' ? 'Écran ORC' : 'Structure du projet'}</b> — <b id="ocrst">${esc(ui.ocr.status)}</b><div class="prog"><i id="ocrbar" style="width:${Math.round(ui.ocr.p * 100)}%"></i></div>
       <div class="thumbs">${ui.ocr.thumbs.map(u => `<img src="${u}" alt="capture">`).join('')}</div>
       <p class="small muted">La première lecture charge le moteur (quelques secondes). Tout se passe sur cet appareil.</p></div>` : '';
-    return `<div class="card"><h2>Capture 1 — Structure du projet (« Donn. base »)</h2>
+    return `<div class="row" style="margin-bottom:12px;align-items:center"><span class="grow small muted">Une seule des deux captures suffit pour obtenir le résultat ; les deux donnent le contrôle le plus complet.</span>
+        <button class="btn" data-tab="resultat">Voir le résultat →</button></div>
+      <div class="card"><h2>Capture 1 — Structure du projet (« Donn. base ») <span class="small muted">(au choix)</span></h2>
       <label class="drop" id="dropImg" data-paste="eotp"><b>Déposer / coller les captures d'écran ici</b><br><span class="small">ou cliquer pour choisir (photos sur téléphone)</span>
         <input type="file" id="inImg" accept="image/*" multiple hidden></label></div>
       ${ocr}
@@ -315,7 +317,7 @@
       <p class="small muted">Les lignes sont dans le même ordre que dans SAP. Comparez chaque ligne avec l'écran SAP et corrigez si besoin (+ insère une ligne en dessous, ↑ ↓ déplacent). Les EOTP sont toujours écrits en entier (ex : RV4-0000000-1-C1-22-I01).</p>
       ${a.eotps.length ? `<div class="tw"><table><thead><tr><th>Élément d'OTP</th><th>Désignation</th><th>Niveau</th><th>CP</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
       <label class="row" style="margin-top:12px;font-weight:600;cursor:pointer"><input type="checkbox" id="eotpOk" ${a.eotpVerified ? 'checked' : ''} style="width:20px;height:20px"> Liste vérifiée par rapport à SAP</label>` : '<p class="muted">Aucun EOTP pour l\'instant.</p>'}
-      </div>${renderOrcInput(a)}${a.eotps.length ? '<div class="row"><button class="btn" data-tab="resultat">Voir le résultat →</button></div>' : ''}`;
+      </div>${renderOrcInput(a)}<div class="row"><button class="btn" data-tab="resultat">Voir le résultat →</button></div>`;
   }
 
   // ----- 2 bis. Écran ORC -----
@@ -325,7 +327,7 @@
     const t1 = o.eotpRows.map((r, i) => `<tr><td>${inp('e', i, 'eotp', r.eotp, 220)}</td><td>${inp('e', i, 'prev', fmt(r.prev))}</td><td>${inp('e', i, 'reel', fmt(r.reel))}</td><td>${esc(r.unit)}</td><td>${inp('e', i, 'nat', r.nat)}</td><td><button class="btn sm danger" data-orcdel="e:${i}">✕</button></td></tr>`).join('');
     const t2 = o.deposeRows.map((r, i) => `<tr><td>${inp('d', i, 'eotp', r.eotp, 220)}</td><td>${inp('d', i, 'nat', r.nat)}</td><td>${inp('d', i, 'designation', r.designation, 200)}</td><td>${inp('d', i, 'mat', r.mat, 45)}</td><td>${inp('d', i, 'IN', r.IN, 50)}</td><td>${inp('d', i, 'annee', r.annee, 60)}</td><td>${inp('d', i, 'prev', fmt(r.prev))}</td><td>${inp('d', i, 'reel', fmt(r.reel))}</td><td>${esc(r.unit)}</td><td><button class="btn sm danger" data-orcdel="d:${i}">✕</button></td></tr>`).join('');
     const has = o.eotpRows.length || o.deposeRows.length;
-    return `<div class="card"><div class="row"><h2 class="grow" style="margin:0">Capture 2 — Écran ORC « Dépose des immobilisations » <span class="small muted">(facultatif)</span></h2>
+    return `<div class="card"><div class="row"><h2 class="grow" style="margin:0">Capture 2 — Écran ORC « Dépose des immobilisations » <span class="small muted">(au choix)</span></h2>
         ${has ? '<button class="btn sm danger" id="orcClear">Vider</button>' : ''}</div>
       <p class="small muted">Capture des deux tableaux « Description technique des EOTP » et « Dépose ». L'appli compare ensuite les quantités réelles saisies dans SAP avec sa proposition (onglet Résultat).</p>
       <label class="drop" id="dropOrc" data-paste="orc"><b>Déposer / coller la capture de l'écran ORC ici</b><br><span class="small">ou cliquer pour choisir</span>
