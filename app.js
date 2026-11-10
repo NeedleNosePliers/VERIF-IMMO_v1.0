@@ -1,7 +1,7 @@
 /* VERIF-IMMO — interface. Tout est traité localement dans le navigateur. */
 (function () {
   'use strict';
-  const VERSION = '2.7';
+  const VERSION = '2.8';
   const APPNAME = 'VERIF-IMMO';
   const E = window.VIEngine;
   const STORE_KEY = 'verifimmo.v1';
@@ -174,11 +174,11 @@
   function loadImg(file) {
     return new Promise((res, rej) => { const u = URL.createObjectURL(file); const i = new Image(); i.onload = () => res({ img: i, url: u }); i.onerror = rej; i.src = u; });
   }
-  async function handleImages(files) {
+  async function handleImages(files, target = 'eotp') {
     const a = cur();
     const imgs = [...files].filter(f => /^image\//.test(f.type));
     if (!imgs.length) { toast('Aucune image reconnue'); return; }
-    ui.ocr = { status: 'Préparation de la lecture…', p: 0, thumbs: [] };
+    ui.ocr = { status: 'Préparation de la lecture…', p: 0, thumbs: [], target };
     render();
     try {
       const w = await getWorker((st, p) => { if (ui.ocr) { ui.ocr.status = st === 'recognizing text' ? 'Lecture du texte…' : 'Chargement du moteur de lecture…'; ui.ocr.p = p; updOcr(); } });
@@ -187,15 +187,25 @@
         const { img, url } = await loadImg(imgs[i]);
         ui.ocr.thumbs.push(url); ui.ocr.status = `Lecture de la capture ${i + 1}/${imgs.length}…`; render();
         const { data } = await w.recognize(preprocess(img));
-        const rows = E.parseOcrText(data.text);
-        for (const r of rows) {
-          if (a.eotps.some(e => e.code === r.code)) continue;
-          a.eotps.push({ code: r.code, designation: r.designation, src: 'capture' }); added++;
+        if (target === 'orc') {
+          const o = E.parseOrcText(data.text);
+          a.orc = a.orc || { eotpRows: [], deposeRows: [] };
+          const sig = r => JSON.stringify([r.eotp, r.mat, r.IN, r.annee, r.prev, r.reel, r.designation]);
+          for (const r of o.eotpRows) if (!a.orc.eotpRows.some(x => x.eotp === r.eotp)) { a.orc.eotpRows.push(r); added++; }
+          for (const r of o.deposeRows) if (!a.orc.deposeRows.some(x => sig(x) === sig(r))) { a.orc.deposeRows.push(r); added++; }
+          // les EOTP de l'écran ORC complètent la liste des EOTP si besoin
+          for (const r of o.eotpRows.concat(o.deposeRows)) if (!a.eotps.some(e => e.code === r.eotp)) { a.eotps.push({ code: r.eotp, designation: r.designation || '', src: 'ORC' }); a.eotpVerified = false; }
+        } else {
+          const rows = E.parseOcrText(data.text);
+          for (const r of rows) {
+            if (a.eotps.some(e => e.code === r.code)) continue;
+            a.eotps.push({ code: r.code, designation: r.designation, src: 'capture' }); added++;
+          }
         }
       }
-      a.eotpVerified = false;
+      if (target === 'orc') a.orcVerified = false; else a.eotpVerified = false;
       ui.ocr = null; touch(a); render();
-      toast(`${added} EOTP ajouté(s). Vérifiez la liste puis cochez « Liste vérifiée ».`);
+      toast(target === 'orc' ? `${added} ligne(s) lue(s) sur l'écran ORC. Vérifiez puis cochez « Écran ORC vérifié ».` : `${added} EOTP ajouté(s). Vérifiez la liste puis cochez « Liste vérifiée ».`);
     } catch (e) {
       console.error(e); ui.ocr = null; render(); toast('Lecture impossible : ' + e.message);
     }
@@ -247,7 +257,7 @@
     const lv = c => R && R.controls.some(x => x.level === c);
     const tabs = [
       ['fichiers', '1. Fichiers carto', (a.pose && a.depose) ? 'ok' : 'rouge'],
-      ['eotp', '2. EOTP SAP', a.eotps.length ? (a.eotpVerified ? 'ok' : 'orange') : 'rouge'],
+      ['eotp', '2. Captures SAP', a.eotps.length ? ((a.eotpVerified && a.orcVerified !== false) ? 'ok' : 'orange') : 'rouge'],
       ['resultat', '3. Résultat', R ? (lv('rouge') ? 'rouge' : lv('orange') ? 'orange' : 'ok') : ''],
       ['troncons', '4. Tronçons', R && R.controls.some(c => c.level === 'orange' && /AB/.test(c.msg)) ? 'orange' : ''],
       ['export', '5. Forçages & export', '']
@@ -292,11 +302,11 @@
         <td>${p && p.cp ? esc(p.cp) : ''}</td>
         <td class="cell"><button class="btn sm sec" data-eotp-ins="${i}" title="Insérer une ligne en dessous">+</button><button class="btn sm sec" data-eotp-up="${i}" title="Monter" ${i ? '' : 'disabled'}>↑</button><button class="btn sm sec" data-eotp-dn="${i}" title="Descendre" ${i < a.eotps.length - 1 ? '' : 'disabled'}>↓</button><button class="btn sm danger" data-eotp-del="${i}" title="Supprimer">✕</button></td></tr>`;
     }).join('');
-    const ocr = ui.ocr ? `<div class="card"><b id="ocrst">${esc(ui.ocr.status)}</b><div class="prog"><i id="ocrbar" style="width:${Math.round(ui.ocr.p * 100)}%"></i></div>
+    const ocr = ui.ocr ? `<div class="card"><b>${ui.ocr.target === 'orc' ? 'Écran ORC' : 'Structure du projet'}</b> — <b id="ocrst">${esc(ui.ocr.status)}</b><div class="prog"><i id="ocrbar" style="width:${Math.round(ui.ocr.p * 100)}%"></i></div>
       <div class="thumbs">${ui.ocr.thumbs.map(u => `<img src="${u}" alt="capture">`).join('')}</div>
       <p class="small muted">La première lecture charge le moteur (quelques secondes). Tout se passe sur cet appareil.</p></div>` : '';
-    return `<div class="card"><h2>Liste des EOTP de l'affaire (SAP)</h2>
-      <label class="drop" id="dropImg"><b>Déposer / coller les captures d'écran ici</b><br><span class="small">ou cliquer pour choisir (photos sur téléphone)</span>
+    return `<div class="card"><h2>Capture 1 — Structure du projet (« Donn. base »)</h2>
+      <label class="drop" id="dropImg" data-paste="eotp"><b>Déposer / coller les captures d'écran ici</b><br><span class="small">ou cliquer pour choisir (photos sur téléphone)</span>
         <input type="file" id="inImg" accept="image/*" multiple hidden></label></div>
       ${ocr}
       <div class="card"><div class="row"><h2 class="grow" style="margin:0">Vérification (${a.eotps.length} lignes)</h2>
@@ -305,7 +315,35 @@
       <p class="small muted">Les lignes sont dans le même ordre que dans SAP. Comparez chaque ligne avec l'écran SAP et corrigez si besoin (+ insère une ligne en dessous, ↑ ↓ déplacent). Les EOTP sont toujours écrits en entier (ex : RV4-0000000-1-C1-22-I01).</p>
       ${a.eotps.length ? `<div class="tw"><table><thead><tr><th>Élément d'OTP</th><th>Désignation</th><th>Niveau</th><th>CP</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
       <label class="row" style="margin-top:12px;font-weight:600;cursor:pointer"><input type="checkbox" id="eotpOk" ${a.eotpVerified ? 'checked' : ''} style="width:20px;height:20px"> Liste vérifiée par rapport à SAP</label>` : '<p class="muted">Aucun EOTP pour l\'instant.</p>'}
-      </div>${a.eotps.length ? '<div class="row"><button class="btn" data-tab="resultat">Voir le résultat →</button></div>' : ''}`;
+      </div>${renderOrcInput(a)}${a.eotps.length ? '<div class="row"><button class="btn" data-tab="resultat">Voir le résultat →</button></div>' : ''}`;
+  }
+
+  // ----- 2 bis. Écran ORC -----
+  function renderOrcInput(a) {
+    const o = a.orc || { eotpRows: [], deposeRows: [] };
+    const inp = (t, i, f, v, w) => `<input class="t" style="min-width:${w || 60}px" data-orc="${t}:${i}:${f}" value="${esc(v ?? '')}">`;
+    const t1 = o.eotpRows.map((r, i) => `<tr><td>${inp('e', i, 'eotp', r.eotp, 220)}</td><td>${inp('e', i, 'prev', fmt(r.prev))}</td><td>${inp('e', i, 'reel', fmt(r.reel))}</td><td>${esc(r.unit)}</td><td>${inp('e', i, 'nat', r.nat)}</td><td><button class="btn sm danger" data-orcdel="e:${i}">✕</button></td></tr>`).join('');
+    const t2 = o.deposeRows.map((r, i) => `<tr><td>${inp('d', i, 'eotp', r.eotp, 220)}</td><td>${inp('d', i, 'nat', r.nat)}</td><td>${inp('d', i, 'designation', r.designation, 200)}</td><td>${inp('d', i, 'mat', r.mat, 45)}</td><td>${inp('d', i, 'IN', r.IN, 50)}</td><td>${inp('d', i, 'annee', r.annee, 60)}</td><td>${inp('d', i, 'prev', fmt(r.prev))}</td><td>${inp('d', i, 'reel', fmt(r.reel))}</td><td>${esc(r.unit)}</td><td><button class="btn sm danger" data-orcdel="d:${i}">✕</button></td></tr>`).join('');
+    const has = o.eotpRows.length || o.deposeRows.length;
+    return `<div class="card"><div class="row"><h2 class="grow" style="margin:0">Capture 2 — Écran ORC « Dépose des immobilisations » <span class="small muted">(facultatif)</span></h2>
+        ${has ? '<button class="btn sm danger" id="orcClear">Vider</button>' : ''}</div>
+      <p class="small muted">Capture des deux tableaux « Description technique des EOTP » et « Dépose ». L'appli compare ensuite les quantités réelles saisies dans SAP avec sa proposition (onglet Résultat).</p>
+      <label class="drop" id="dropOrc" data-paste="orc"><b>Déposer / coller la capture de l'écran ORC ici</b><br><span class="small">ou cliquer pour choisir</span>
+        <input type="file" id="inOrc" accept="image/*" multiple hidden></label>
+      ${has ? `<h3>Description technique des EOTP (pose)</h3><div class="tw"><table><thead><tr><th>Élément d'OTP</th><th>Qté prév.</th><th>Qté réelle</th><th>Unité</th><th>Nat. ouvr.</th><th></th></tr></thead><tbody>${t1 || '<tr><td colspan="6" class="muted">—</td></tr>'}</tbody></table></div>
+      <h3>Dépose</h3><div class="tw"><table><thead><tr><th>Élément d'OTP</th><th>Nat. ouvr.</th><th>Désignation</th><th>Mat.</th><th>IN</th><th>Année</th><th>Qté prév.</th><th>Qté réelle</th><th>Unité</th><th></th></tr></thead><tbody>${t2 || '<tr><td colspan="10" class="muted">—</td></tr>'}</tbody></table></div>
+      <label class="row" style="margin-top:12px;font-weight:600;cursor:pointer"><input type="checkbox" id="orcOk" ${a.orcVerified ? 'checked' : ''} style="width:20px;height:20px"> Écran ORC vérifié par rapport à SAP</label>` : ''}</div>`;
+  }
+  function renderOrcCompare(R) {
+    if (!R.orc) return '';
+    const st = x => x.absent ? '<span class="pill none">absent de l\'écran ORC</span>' : x.ok ? '<span class="pill" style="background:var(--green-l);color:#2f6b10">identique</span>' : '<span class="pill" style="background:var(--orange-l);color:var(--orange)">différent</span>';
+    const u = x => x.unit === 'M' ? ' m' : '';
+    const p = R.orc.pose.map(x => `<tr><td>${esc(x.eotp)}</td><td>${esc(x.nat || '')}</td><td class="num">${x.prev == null ? '—' : fmt(x.prev) + u(x)}</td><td class="num">${x.reel == null ? '—' : fmt(x.reel) + u(x)}</td><td class="num"><b>${fmt(x.app)}${u(x)}</b></td><td>${st(x)}</td></tr>`).join('');
+    const d = R.orc.depose.map(x => `<tr><td>${esc(x.eotp)}</td><td class="wrap">${esc(x.designation || '')}</td><td>${esc(x.mat || '')}</td><td>${esc(x.IN || '')}</td><td>${esc(x.annee || '')}</td><td class="num">${x.prev == null ? '—' : fmt(x.prev) + u(x)}</td><td class="num">${x.reel == null ? '—' : fmt(x.reel) + u(x)}</td><td class="num"><b>${fmt(x.app)}${u(x)}</b></td><td>${st(x)}</td></tr>`).join('');
+    return `<div class="card"><h2>Comparaison avec l'écran ORC</h2>
+      <p class="small muted">« Qté réelle SAP » = ce qui est saisi dans SAP ; « Proposition » = ce que calcule l'appli à partir de la carto (mètres arrondis au-dessus). INSEE non comparé (la carto donne l'arrondissement, SAP la commune).</p>
+      <h3>Pose par EOTP</h3><div class="tw"><table><thead><tr><th>EOTP</th><th>Nat. ouvr.</th><th class="num">Qté prév.</th><th class="num">Qté réelle SAP</th><th class="num">Proposition</th><th>Statut</th></tr></thead><tbody>${p || '<tr><td colspan="6" class="muted">—</td></tr>'}</tbody></table></div>
+      <h3>Dépose / abandon</h3><div class="tw"><table><thead><tr><th>EOTP</th><th>Désignation</th><th>Mat.</th><th>IN</th><th>Année</th><th class="num">Qté prév.</th><th class="num">Qté réelle SAP</th><th class="num">Proposition</th><th>Statut</th></tr></thead><tbody>${d || '<tr><td colspan="9" class="muted">—</td></tr>'}</tbody></table></div></div>`;
   }
 
   // ----- 3. Résultat -----
@@ -348,7 +386,7 @@
           x += w; return r;
         }).join('');
       };
-      const svg = `<svg viewBox="-2 0 ${W + 4} 92" width="100%" role="img" aria-label="Schéma ${esc(p.label)}">
+      const svg = `<svg viewBox="-2 0 ${W + 4} 92" width="100%" style="max-width:560px;display:block" role="img" aria-label="Schéma ${esc(p.label)}">
         <text x="0" y="12" font-size="12" fill="#4a5866">Ancien (dépose) : ${fmt(tot(dep))}${unit}</text>${bar(dep, 16)}
         <text x="0" y="60" font-size="12" fill="#4a5866">Nouveau (pose) : ${fmt(tot(pos))}${unit}</text>${bar(pos, 64)}</svg>`;
       return `<div class="card"><h3 style="margin-top:0">${esc(p.label)}${R.chantiers.length > 1 ? ' — ' + esc(p.chantier) : ''}</h3>${svg}</div>`;
@@ -401,6 +439,7 @@
       <div class="card"><h2>Totaux par EOTP et test ±10 %</h2>
         <p class="small muted">Sur les EOTP de renouvellement (CP 17, 18, 20, 21, 22, 23, 25, 26, 27), écart = (dépose renouvelée − pose) / pose, à garder entre −10 % et +10 %. La dépose renouvelée ne compte pas la part qui doit partir en AB.</p>
         <div class="tw"><table><thead><tr><th>EOTP</th><th>CP</th><th class="num">Pose</th><th class="num">Dépose renouvelée</th><th class="num">Écart</th><th>Test ±10 %</th></tr></thead><tbody>${tot || '<tr><td colspan="6" class="muted">—</td></tr>'}</tbody></table></div></div>
+      ${renderOrcCompare(R)}
       <div class="card"><div class="row"><h2 class="grow" style="margin:0">PDR</h2><button class="btn sm sec" id="pdrAdd">+ Ajouter un PDR</button></div>
         ${R.pdr.length ? `<div class="tw"><table><thead><tr><th>PDR</th><th>EOTP</th><th>Nature</th><th>Catégorie</th><th>Origine</th></tr></thead><tbody>${pdrRows}</tbody></table></div>` : '<p class="muted">Aucun PDR.</p>'}</div>`;
   }
@@ -498,7 +537,7 @@
     return `<div class="card help"><h1>Aide — ${APPNAME} Ver.${VERSION}</h1>
       <h3>Étapes</h3><ol>
       <li><b>Fichiers carto</b> : glisser les deux fichiers « G Canalisation » (pose et dépose) envoyés par la carto, sans les ouvrir.</li>
-      <li><b>EOTP SAP</b> : capture d'écran de la structure du projet (onglet « Donn. base »), puis vérification de la liste lue.</li>
+      <li><b>Captures SAP</b> : capture de la structure du projet (onglet « Donn. base »), puis, si possible, capture de l'écran ORC « Dépose des immobilisations ». Vérification de ce qui a été lu.</li>
       <li><b>Résultat</b> : verdict, schéma, contrôles, lignes d'immo à saisir, test ±10 %, PDR.</li>
       <li><b>Tronçons</b> : détail ligne par ligne, choix des tronçons qui partent en AB, forçages.</li>
       <li><b>Export</b> : PDF / Excel avec la trace des forçages, sauvegarde de l'affaire.</li></ol>
@@ -510,7 +549,8 @@
       <li>Tolérance : un surplus de dépose de <b>moins de 1 m</b> n'est pas envoyé en AB ; il reste sur l'EOTP de renouvellement (sauf si le CA choisit de l'AB).</li>
       <li>Quantités à saisir dans SAP : mètres <b>arrondis à l'unité supérieure</b> (ex : 15,6 m → 16 m).</li>
       <li>Longueur retenue : <b>longueur installée</b>. Classes : IN1 &lt; 80 mm ; IN2 de 80 à &lt; 200 mm ; IN3 ≥ 200 mm (diamètre externe).</li></ol>
-      <h3>Branchements</h3><ul><li>Une ligne carto = un branchement. Individuel (courant, GC) → CP 25 ; collectif → CP 26. Renouvelés = le plus petit nombre entre pose et dépose ; le surplus de dépose part en AB (lignes cochées par le CA). Le tubage ne s'applique qu'au réseau.</li></ul>
+      <h3>Écran ORC</h3><ul><li>Facultatif. L'appli lit les deux tableaux (« Description technique des EOTP » et « Dépose ») et compare chaque quantité réelle saisie dans SAP avec sa proposition : pose par EOTP ; dépose par EOTP, matière, classe IN et année. Les EOTP de l'écran ORC absents de la liste sont ajoutés à la liste des EOTP.</li></ul>
+            <h3>Branchements</h3><ul><li>Une ligne carto = un branchement. Individuel (courant, GC) → CP 25 ; collectif → CP 26. Renouvelés = le plus petit nombre entre pose et dépose ; le surplus de dépose part en AB (lignes cochées par le CA). Le tubage ne s'applique qu'au réseau.</li></ul>
       <h3>Fonte grise</h3><ul><li>Si la structure SAP contient les CP 17, 18, 20 ou 21 à la place de 22, 23, 25 ou 26, l'appli les utilise.</li></ul>
       <h3>PDR</h3><ul><li>Absents de la carto : détectés dans les désignations SAP (« D00000-PDR00000 »). Nature = Abandon si l'EOTP est sous AB, sinon Pose (catégorie S31E). Le branchement d'un poste est traité comme du réseau ; l'option « Brt PDR » (catégorie P21E) reste disponible ligne par ligne.</li></ul>
       <h3>Contrôles</h3><ul>
@@ -548,6 +588,19 @@
     });
     document.querySelectorAll('[data-rmfile]').forEach(b => b.onclick = () => { a[b.dataset.rmfile] = null; touch(a); render(); });
     // eotp
+    const dor = $('#dropOrc'), ior = $('#inOrc');
+    if (dor) { dropify(dor, files => handleImages(files, 'orc')); ior.onchange = e => handleImages(e.target.files, 'orc'); }
+    document.querySelectorAll('[data-paste]').forEach(z => { const set = () => { ui.pasteTarget = z.dataset.paste; document.querySelectorAll('[data-paste]').forEach(y => y.classList.toggle('hover', y === z)); }; z.addEventListener('mouseenter', set); });
+    document.querySelectorAll('[data-orc]').forEach(i => i.onchange = () => {
+      const [t, idx, f] = i.dataset.orc.split(':'); const row = a.orc[t === 'e' ? 'eotpRows' : 'deposeRows'][+idx];
+      let v = i.value.trim();
+      if (['prev', 'reel', 'annee'].includes(f)) { const n = parseFloat(v.replace(',', '.')); v = isFinite(n) ? n : null; }
+      else if (['eotp', 'mat', 'IN', 'nat'].includes(f)) v = v.toUpperCase();
+      row[f] = v; touch(a); render();
+    });
+    document.querySelectorAll('[data-orcdel]').forEach(b => b.onclick = () => { const [t, idx] = b.dataset.orcdel.split(':'); a.orc[t === 'e' ? 'eotpRows' : 'deposeRows'].splice(+idx, 1); touch(a); render(); });
+    const oc = $('#orcClear'); if (oc) oc.onclick = () => confirmBox("Vider les données lues sur l'écran ORC ?", () => { a.orc = null; delete a.orcVerified; touch(a); render(); }, 'Vider');
+    const ook = $('#orcOk'); if (ook) ook.onchange = () => { a.orcVerified = ook.checked; touch(a); render(); };
     const di = $('#dropImg'), ii = $('#inImg');
     if (di) { dropify(di, files => handleImages(files)); ii.onchange = e => handleImages(e.target.files); }
     document.querySelectorAll('[data-eotp-code]').forEach(i => i.onchange = () => { const e = a.eotps[+i.dataset.eotpCode]; e.code = i.value.trim().toUpperCase(); touch(a); render(); });
@@ -586,7 +639,7 @@
   document.addEventListener('paste', e => {
     if (ui.view !== 'affaire' || ui.tab !== 'eotp' || !cur()) return;
     const files = [...(e.clipboardData ? e.clipboardData.items : [])].filter(i => i.type.startsWith('image/')).map(i => i.getAsFile());
-    if (files.length) { e.preventDefault(); handleImages(files); }
+    if (files.length) { e.preventDefault(); handleImages(files, ui.pasteTarget || 'eotp'); }
   });
 
   function pdrDialog(a) {
@@ -653,6 +706,9 @@
     add('Tronçons pose', [LINE_HDR, ...lineRows(R, 'pose')], [6, 12, 26, 12, 8, 7, 5, 6, 10, 9, 7, 50, 6, 7]);
     add('Tronçons dépose', [LINE_HDR, ...lineRows(R, 'depose')], [6, 12, 26, 12, 8, 7, 5, 6, 10, 9, 7, 50, 6, 7]);
     add('EOTP SAP', [['Élément d\'OTP', 'Désignation'], ...a.eotps.map(e => [e.code, e.designation])], [30, 50]);
+    if (R.orc) add('Comparaison ORC', [['Tableau', 'EOTP', 'Désignation', 'Mat.', 'IN', 'Année', 'Qté prév.', 'Qté réelle SAP', 'Proposition', 'Statut'],
+      ...R.orc.pose.map(x => ['Pose', x.eotp, x.nat || '', '', '', '', x.prev, x.reel, x.app, x.absent ? 'absent ORC' : x.ok ? 'identique' : 'différent']),
+      ...R.orc.depose.map(x => ['Dépose', x.eotp, x.designation || '', x.mat || '', x.IN || '', x.annee || '', x.prev, x.reel, x.app, x.absent ? 'absent ORC' : x.ok ? 'identique' : 'différent'])], [8, 28, 34, 6, 6, 7, 10, 14, 12, 12]);
     add('Forçages', [['Valeur', 'Auto', 'Forcée', 'Commentaire', 'Date'], ...forceRows(a)], [60, 18, 18, 40, 18]);
     const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
     download(new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `${safeName(a.nom)}_controle_${stamp()}.xlsx`);
@@ -712,6 +768,9 @@
     tbl('Totaux par EOTP — test ±10 %', ['EOTP', 'CP', 'Pose', 'Dépose renouvelée', 'Écart', 'Test ±10 %'],
       R.eotpTotals.map(e => [e.eotp, e.cp, fmtQ(e.pose, e.unit), fmtQ(e.depose, e.unit), pct(e), !e.renouv ? '—' : e.ok10 ? 'OK' : 'ÉCART > 10 %']));
     tbl('PDR', ['PDR', 'EOTP', 'Nature', 'Catégorie', 'Origine'], R.pdr.map(p => [p.pdr, p.eotp, p.nature, p.categorie, p.auto ? 'détecté SAP' : 'manuel']));
+    if (R.orc) tbl("Comparaison avec l'écran ORC", ['Tableau', 'EOTP', 'Désignation', 'Mat.', 'IN', 'Année', 'Qté prév.', 'Qté réelle SAP', 'Proposition', 'Statut'],
+      R.orc.pose.map(x => ['Pose', x.eotp, x.nat || '', '', '', '', x.prev ?? '—', x.reel ?? '—', x.app, x.absent ? 'absent ORC' : x.ok ? 'identique' : 'différent'])
+        .concat(R.orc.depose.map(x => ['Dépose', x.eotp, x.designation || '', x.mat || '', x.IN || '', x.annee || '', x.prev ?? '—', x.reel ?? '—', x.app, x.absent ? 'absent ORC' : x.ok ? 'identique' : 'différent'])));
     tbl('Trace des forçages', ['Valeur', 'Auto', 'Forcée', 'Commentaire', 'Date'], forceRows(a));
     doc.addPage(); y = 14;
     tbl('Annexe — tronçons pose', LINE_HDR, lineRows(R, 'pose'));

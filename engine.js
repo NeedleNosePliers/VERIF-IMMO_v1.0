@@ -164,7 +164,7 @@
       const ab = lines.filter(l => /abandon/i.test(norm(l.etat))).length;
       kind = ab > lines.length / 2 ? 'depose' : 'pose';
     }
-    const m = String(fileName || '').match(/([A-Z]{2,3}\d?-\d{7}-\d)/i);
+    const m = String(fileName || '').match(/([A-Z]{2,3}\d?-\d{7}(?:-\d)?)/i);
     return { kind, lines, fileName: fileName || '', affaireCode: m ? m[1].toUpperCase() : '', headerRow: hIdx + 1 };
   }
 
@@ -569,14 +569,103 @@
     const unused = elements.filter(e => !used.has(e.code));
     for (const e of unused) add('info', `EOTP A EXCLURE : ${e.code} (${e.designation || 'sans désignation'}) — aucun tronçon affecté.`, 'eotp:' + e.code);
 
-    // 8. verdict
+    // 8. écran ORC (facultatif)
+    let orc = null;
+    if (state.orc && ((state.orc.eotpRows || []).length || (state.orc.deposeRows || []).length)) {
+      orc = compareOrc({ recap, pdr }, state.orc);
+      if (state.orcVerified === false) add('orange', "Écran ORC lu sur capture : à vérifier par rapport à SAP puis cocher « Écran ORC vérifié » (onglet Captures SAP).");
+      if (orc.nbEcarts) add('orange', `Écran ORC : ${orc.nbEcarts} ligne${orc.nbEcarts > 1 ? 's' : ''} différente${orc.nbEcarts > 1 ? 's' : ''} de la proposition de l'appli — voir « Comparaison avec l'écran ORC ».`);
+    }
+
+    // 9. verdict
     const bad = controls.filter(c => c.level === 'rouge' || c.level === 'orange').length;
     const autoVerdict = bad ? 'ÉCARTS À CORRIGER' : 'VALIDATION OK';
     const verdict = forces.VERDICT ? forces.VERDICT.value : autoVerdict;
 
-    return { lines: L, recap, eotpTotals, pools, pdr, controls, unused, verdict, autoVerdict, chantiers, elements: elements.map(e => ({ code: e.code, designation: e.designation, cp: e.p.cp })) };
+    return { lines: L, recap, eotpTotals, pools, pdr, orc, controls, unused, verdict, autoVerdict, chantiers, elements: elements.map(e => ({ code: e.code, designation: e.designation, cp: e.p.cp })) };
   }
 
-  const api = { compute, parseCarto, parseOcrText, fixEotp, parseEotpCode, classeIN, categorie, autoAttrs, typeOf, TYPE_LABEL, RENEW_CP, yearOf, norm, dateDisp };
+  // ---------- Écran SAP « ORC – Dépose des immobilisations » ----------
+  const numFr = v => { const n = parseFloat(String(v).replace(/\s/g, '').replace(',', '.')); return isFinite(n) ? n : null; };
+  const fixNat = n => { const t = String(n).toUpperCase().replace(/[^A-Z0-9]/g, ''); const m = t.match(/^([A-Z])[A-Z]?(\d{2}[EF])$/); return m ? m[1] + m[2] : t; };
+  const fixIN = t => { const m = String(t).toUpperCase().match(/^IN([1-3IL])$/); return m ? 'IN' + m[1].replace(/[IL]/, '1') : null; };
+  // texte lu -> { eotpRows (tableau « Description technique des EOTP »), deposeRows (tableau « Dépose ») }
+  function parseOrcText(text) {
+    const eotpRows = [], deposeRows = [];
+    const reCode = /([A-Z0-9]{2,4}-?[0-9OIL]{7}-?[0-9OIL]-?C[0-9IL]{1,2}-?[0-9A-Z]{2}-?[I1L]?[0-9OIL]{2,3})/i;
+    let zone = 1;
+    for (const raw of String(text).split(/\r?\n/)) {
+      const line = raw.replace(/[|]/g, ' ').replace(/\s+/g, ' ').trim();
+      if (/^d[ée]pose\b/i.test(line)) { zone = 2; continue; }
+      const m = line.match(reCode);
+      if (!m) continue;
+      const code = fixEotp(m[1]);
+      if (!code || !parseEotpCode(code) || !parseEotpCode(code).elem) continue;
+      const before = line.slice(0, m.index).trim();
+      const after = line.slice(m.index + m[1].length).trim();
+      if (zone === 1 && !before) {
+        // EOTP INSEE prév unité réel unité nature
+        const t = after.match(/^(\d{5})\s+([\d.,]+)\s+(M|PCE|U|ML)\s+([\d.,]+)?\s*(M|PCE|U|ML)?\s*([A-Z0-9]{3,6})?/i);
+        if (t) eotpRows.push({ eotp: code, insee: t[1], prev: numFr(t[2]), unit: t[3].toUpperCase(), reel: t[4] != null ? numFr(t[4]) : null, nat: t[6] ? fixNat(t[6]) : '' });
+        continue;
+      }
+      // ligne du tableau Dépose : INSEE commune EOTP nature désignation [mat IN libellé diamètre] [année] prév unité réel unité date
+      const insee = (before.match(/^(\d{5})/) || [])[1] || '';
+      const tail = after.match(/(?:\s(\d{4}))?\s+([\d.,]+)\s+(M|PCE|U|ML)\s+([\d.,]+)?\s*(M|PCE|U|ML)?\s*(\d{2}[./]\d{2}[./]\d{4})?\s*$/i);
+      if (!tail) continue;
+      let mid = after.slice(0, tail.index).trim();
+      const natM = mid.match(/^([A-Z0-9]{3,6})\s+/i);
+      const nat = natM ? fixNat(natM[1]) : '';
+      if (natM) mid = mid.slice(natM[0].length);
+      let mat = '', IN = null, designation = mid;
+      const mm = mid.match(/\s(A|PE|AC|FG|FD|[A-Z]{1,3})\s+(IN[1-3IL])\b/i);
+      if (mm && fixIN(mm[2])) { mat = mm[1].toUpperCase(); IN = fixIN(mm[2]); designation = mid.slice(0, mm.index).trim(); }
+      deposeRows.push({ eotp: code, insee, nat, designation, mat, IN, annee: tail[1] ? +tail[1] : null,
+        prev: numFr(tail[2]), unit: tail[3].toUpperCase(), reel: tail[4] != null ? numFr(tail[4]) : null, date: tail[6] || '' });
+    }
+    return { eotpRows, deposeRows };
+  }
+
+  // Comparaison écran ORC / proposition de l'appli (INSEE ignoré : la carto donne l'arrondissement, SAP la commune)
+  const MAT_SAP = { '(PE)': 'PE', '(Ac)': 'AC', '(Autre)': 'A' };
+  function compareOrc(R, orc) {
+    const out = { pose: [], depose: [] };
+    if (!orc) return out;
+    const ceil = (q, u) => u === 'm' ? Math.ceil(q - 1e-9) : q;
+    // pose par EOTP
+    const poseApp = {};
+    for (const r of R.recap) if (r.action === 'POSE' && r.eotp) poseApp[r.eotp] = (poseApp[r.eotp] || 0) + r.qtySAP;
+    const seenP = new Set();
+    for (const e of orc.eotpRows || []) {
+      seenP.add(e.eotp);
+      const app = poseApp[e.eotp] ?? 0;
+      out.pose.push({ ...e, app, ok: e.reel != null && Math.abs(e.reel - app) < EPS });
+    }
+    for (const k of Object.keys(poseApp)) if (!seenP.has(k)) out.pose.push({ eotp: k, prev: null, reel: null, unit: (R.recap.find(r => r.eotp === k && r.action === 'POSE') || {}).unit === 'm' ? 'M' : 'PCE', nat: '', app: poseApp[k], ok: false, absent: true });
+    // dépose par EOTP + matière + IN + année (réseau) ; par EOTP pour branchements et postes
+    const depApp = {};
+    const keyOf = (eotp, mat, IN, annee) => mat ? `${eotp}|${mat}|${IN}|${annee}` : `${eotp}|-`;
+    for (const r of R.recap) {
+      if (r.action !== 'DEPOSE' || !r.eotp) continue;
+      const k = r.type === 'RES' ? keyOf(r.eotp, MAT_SAP[r.matiere] || r.matiere, r.IN, r.annee) : keyOf(r.eotp);
+      depApp[k] = (depApp[k] || 0) + r.qtySAP;
+    }
+    for (const p of R.pdr || []) if (p.eotp) { const k = keyOf(p.eotp); depApp[k] = (depApp[k] || 0) + 1; }
+    const seenD = new Set();
+    for (const d of orc.deposeRows || []) {
+      const k = keyOf(d.eotp, d.mat, d.IN, d.annee);
+      seenD.add(k);
+      const app = depApp[k] ?? 0;
+      out.depose.push({ ...d, key: k, app, ok: d.reel != null && Math.abs(d.reel - app) < EPS });
+    }
+    for (const k of Object.keys(depApp)) if (!seenD.has(k)) {
+      const [eotp, mat, IN, annee] = k.split('|');
+      out.depose.push({ eotp, mat: mat === '-' ? '' : mat, IN: IN || null, annee: annee ? +annee : null, designation: '', prev: null, reel: null, unit: mat !== '-' ? 'M' : 'PCE', app: depApp[k], ok: false, absent: true, key: k });
+    }
+    out.nbEcarts = out.pose.filter(x => !x.ok).length + out.depose.filter(x => !x.ok).length;
+    return out;
+  }
+
+  const api = { compute, parseOrcText, compareOrc, parseCarto, parseOcrText, fixEotp, parseEotpCode, classeIN, categorie, autoAttrs, typeOf, TYPE_LABEL, RENEW_CP, yearOf, norm, dateDisp };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.VIEngine = api;
 })(typeof window !== 'undefined' ? window : globalThis);
