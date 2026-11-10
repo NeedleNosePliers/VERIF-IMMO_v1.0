@@ -480,7 +480,7 @@
           if (ab) x.alloc.push({ eotp: (tAB || target(chantier, role, true)).eotp, cp: 'AB', qty: 1 });
           else x.alloc.push({ eotp: t.eotp, cp: t.cp, qty: 1 });
         }
-        if (chosen !== need) { pending.add(t.eotp); }
+        if (chosen !== need) { pending.add(t.eotp); if (tAB && tAB.eotp) pending.add(tAB.eotp); }
         if (need > chosen && t.eotp) pendingQty[t.eotp] = (pendingQty[t.eotp] || 0) + (need - chosen);
         if (chosen !== need)
           add('orange', chosen < need
@@ -565,7 +565,8 @@
     }).sort((a, b) => a.eotp.localeCompare(b.eotp));
 
     // 7. EOTP non utilisés (information, comme « EOTP A EXCLURE »)
-    const used = new Set(recap.map(r => r.eotp).concat(pdr.map(p => p.eotp)));
+    // un EOTP qui attend le choix des tronçons AB n'est pas « à exclure »
+    const used = new Set(recap.map(r => r.eotp).concat(pdr.map(p => p.eotp)).concat([...pending]));
     const unused = elements.filter(e => !used.has(e.code));
     for (const e of unused) add('info', `EOTP A EXCLURE : ${e.code} (${e.designation || 'sans désignation'}) — aucun tronçon affecté.`, 'eotp:' + e.code);
 
