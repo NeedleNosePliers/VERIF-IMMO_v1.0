@@ -454,8 +454,8 @@
           if (rest > EPS && tCP && tCP.eotp) pendingQty[tCP.eotp] = (pendingQty[tCP.eotp] || 0) + rest;
           if (Math.abs(rest) > EPS)
             add('orange', rest > 0
-              ? `${poolName} : ${fr(rest)} m de dépose à mettre en AB — choisir les tronçons dans l'onglet Tronçons.`
-              : `${poolName} : ${fr(-rest)} m de trop mis en AB.`, 'pool:' + ch + ':' + poolName);
+              ? `Affecter ${fr(rest)} m d'abandon à ${tAB && tAB.eotp ? tAB.eotp : "l'élément AB réseau (à créer dans SAP)"} — ${poolName} : choisir les tronçons concernés dans l'onglet Tronçons.`
+              : `${poolName} : ${fr(-rest)} m de trop mis en abandon sur ${tAB && tAB.eotp ? tAB.eotp : "l'élément AB"}.`, 'pool:' + ch + ':' + poolName);
           return { need: r2(need), chosen: r2(chosen), rest };
         };
         const s23 = deal(depTub, t23, ab23, 'Réseau tubé (CP 23)');
@@ -484,7 +484,7 @@
         if (need > chosen && t.eotp) pendingQty[t.eotp] = (pendingQty[t.eotp] || 0) + (need - chosen);
         if (chosen !== need)
           add('orange', chosen < need
-            ? `${TYPE_LABEL[role]} : ${(n => `${n} ${role === 'CI' || role === 'CM' ? 'ouvrage' : 'branchement'}${n > 1 ? 's' : ''} déposé${n > 1 ? 's' : ''}`)(need - chosen)} à mettre en AB — cocher les lignes dans l'onglet Tronçons.`
+            ? `Affecter ${(n => `${n} ${role === 'CI' || role === 'CM' ? 'ouvrage' : 'branchement'}${n > 1 ? 's' : ''}`)(need - chosen)} d'abandon à ${tAB && tAB.eotp ? tAB.eotp : `l'élément « ${AB_ROLE[role].label} » (à créer dans SAP)`} — ${TYPE_LABEL[role]} : cocher les lignes concernées dans l'onglet Tronçons.`
             : `${TYPE_LABEL[role]} : ${plur(chosen - need, role === 'CI' || role === 'CM' ? 'ouvrage' : 'branchement')} de trop mis en AB.`, 'pool:' + ch + ':' + role);
         pools.push({ chantier: ch, kind: role, label: TYPE_LABEL[role], unit: 'u', P: P.length, D: D.length, R, AB: need, chosen });
       }

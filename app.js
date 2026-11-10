@@ -1,7 +1,7 @@
 /* VERIF-IMMO — interface. Tout est traité localement dans le navigateur. */
 (function () {
   'use strict';
-  const VERSION = '3.1';
+  const VERSION = '3.2';
   const APPNAME = 'VERIF-IMMO';
   const E = window.VIEngine;
   const STORE_KEY = 'verifimmo.v1';
@@ -470,7 +470,7 @@
     const f = ui.filter;
     const opts = eotpOptions(R);
     const typeOpts = Object.entries(E.TYPE_LABEL).map(([k, v]) => [k, v]);
-    const pending = R.controls.filter(c => c.level === 'orange' && /AB/.test(c.msg));
+    const pending = R.controls.filter(c => c.level === 'orange' && /abandon|AB/.test(c.msg) && /^Affecter|de trop/.test(c.msg));
     const table = kind => {
       const xs = R.lines.filter(x => x.kind === kind && lineMatches(x, f));
       if (!xs.length) return '<p class="muted">Aucune ligne.</p>';

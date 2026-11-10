@@ -1,5 +1,5 @@
 /* VERIF-IMMO — fonctionnement hors ligne. Changer VERSION à chaque mise à jour de l'appli. */
-const VERSION = '3.1';
+const VERSION = '3.2';
 const CACHE = 'verif-immo-' + VERSION;
 const FILES = [
   './', 'index.html', `style.css?v=${VERSION}`, `engine.js?v=${VERSION}`, `app.js?v=${VERSION}`,
@@ -21,7 +21,7 @@ self.addEventListener('fetch', e => {
   if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
   // la page : réseau d'abord (pour récupérer les mises à jour), sinon la copie enregistrée
   if (req.mode === 'navigate') {
-    e.respondWith(fetch(req).then(r => { const cp = r.clone(); caches.open(CACHE).then(c => c.put('index.html', cp)); return r; })
+    e.respondWith(fetch(req, { cache: 'no-cache' }).then(r => { const cp = r.clone(); caches.open(CACHE).then(c => c.put('index.html', cp)); return r; })
       .catch(() => caches.match('index.html')));
     return;
   }
