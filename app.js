@@ -1,7 +1,7 @@
 /* VERIF-IMMO — interface. Tout est traité localement dans le navigateur. */
 (function () {
   'use strict';
-  const VERSION = '3.0';
+  const VERSION = '3.1';
   const APPNAME = 'VERIF-IMMO';
   const E = window.VIEngine;
   const STORE_KEY = 'verifimmo.v1';
@@ -183,11 +183,18 @@
     try {
       const w = await getWorker((st, p) => { if (ui.ocr) { ui.ocr.status = st === 'recognizing text' ? 'Lecture du texte…' : 'Chargement du moteur de lecture…'; ui.ocr.p = p; updOcr(); } });
       let added = 0;
+      const usedTargets = new Set();
       for (let i = 0; i < imgs.length; i++) {
         const { img, url } = await loadImg(imgs[i]);
         ui.ocr.thumbs.push(url); ui.ocr.status = `Lecture de la capture ${i + 1}/${imgs.length}…`; render();
         const { data } = await w.recognize(preprocess(img));
-        if (target === 'orc') {
+        // capture déposée dans la mauvaise zone : on la reconnaît à son contenu
+        let tgt = target;
+        const looksOrc = /Description technique des EOTP|Qt[ée]\.? r[ée]elle|Qt[ée]\.? pr[ée]v|Date d[ée]p/i.test(data.text);
+        if (tgt === 'eotp' && looksOrc) { tgt = 'orc'; toast("Capture reconnue comme l'écran ORC : rangée dans la capture 2."); }
+        else if (tgt === 'orc' && !looksOrc && E.parseOcrText(data.text).length) { tgt = 'eotp'; toast('Capture reconnue comme la structure du projet : rangée dans la capture 1.'); }
+        usedTargets.add(tgt);
+        if (tgt === 'orc') {
           const o = E.parseOrcText(data.text);
           a.orc = a.orc || { eotpRows: [], deposeRows: [] };
           const sig = r => JSON.stringify([r.eotp, r.mat, r.IN, r.annee, r.prev, r.reel, r.designation]);
@@ -198,14 +205,17 @@
         } else {
           const rows = E.parseOcrText(data.text);
           for (const r of rows) {
-            if (a.eotps.some(e => e.code === r.code)) continue;
+            const ex = a.eotps.find(e => e.code === r.code);
+            if (ex) { if (ex.src === 'ORC' || !ex.designation) { ex.designation = r.designation; ex.src = 'capture'; } continue; }
             a.eotps.push({ code: r.code, designation: r.designation, src: 'capture' }); added++;
           }
         }
       }
-      if (target === 'orc') a.orcVerified = false; else a.eotpVerified = false;
+      if (usedTargets.has('orc')) a.orcVerified = false;
+      if (usedTargets.has('eotp')) a.eotpVerified = false;
       ui.ocr = null; touch(a); render();
-      toast(target === 'orc' ? `${added} ligne(s) lue(s) sur l'écran ORC. Vérifiez puis cochez « Écran ORC vérifié ».` : `${added} EOTP ajouté(s). Vérifiez la liste puis cochez « Liste vérifiée ».`);
+      if (usedTargets.size === 1 && !usedTargets.has(target)) return; // le message de réorientation est déjà affiché
+      toast(usedTargets.has('orc') && !usedTargets.has('eotp') ? `${added} ligne(s) lue(s) sur l'écran ORC. Vérifiez puis cochez « Écran ORC vérifié ».` : `${added} EOTP ajouté(s). Vérifiez la liste puis cochez « Liste vérifiée ».`);
     } catch (e) {
       console.error(e); ui.ocr = null; render(); toast('Lecture impossible : ' + e.message);
     }
