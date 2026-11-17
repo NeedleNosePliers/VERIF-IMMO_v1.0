@@ -10,6 +10,7 @@
   const ROLE_CP = {
     RES_TUB: ['23', '18'], // tubage des conduites (23 ; 18 si fonte grise)
     RES_HT: ['22', '17'],  // réseau hors tubage (22 ; 17 si fonte grise)
+    RES_RS: ['15'],        // restructuration : réseau posé là où rien n'existait
     BI: ['25', '20'],      // branchements individuels
     BC: ['26', '21'],      // branchements collectifs
     CI: ['27'],
@@ -441,6 +442,25 @@
       return b;
     });
 
+    // 4 bis. CP 15 (restructuration) : la pose hors tubage qui ne remplace aucune dépose (réseau nouveau) part en CP 15 ;
+    //        le remplacement d'un réseau existant (conversion de pression, changement de diamètre…) reste en CP 22
+    for (const ch of [...new Set(pose.map(p => p.chantier))]) {
+      const p22 = pose.find(p => p.chantier === ch && p.role === 'RES_HT');
+      if (!p22 || p22.forced) continue;
+      const p23 = pose.find(p => p.chantier === ch && p.role === 'RES_TUB');
+      const depCap = biens.filter(b => b.chantier === ch && b.type === 'RES').reduce((s, b) => s + b.cap, 0);
+      const avail = Math.max(0, depCap - (p23 ? p23.qty : 0));
+      if (p22.auto <= avail) continue;
+      const surplus = p22.auto - avail;
+      const t15 = target(ch, 'RES_RS');
+      let p15 = pose.find(p => p.col === t15.col);
+      if (!p15) { p15 = { eotp: t15.eotp, col: t15.col, cp: t15.cp, toCreate: t15.toCreate, role: 'RES_RS', type: 'RES', fam: 'RES', chantier: ch, unit: 'm', exact: 0, lines: [], brtPDR: false, auto: 0, qty: 0 }; pose.push(p15); }
+      p15.role = 'RES_RS'; p15.auto += surplus; p15.exact = r2(p15.exact + surplus);
+      const f15 = forces['POSE:' + p15.col]; p15.qty = f15 ? +f15.value : p15.auto; p15.forced = !!f15; p15.categorie = categorie('15', 'RES');
+      p22.auto = avail; p22.qty = avail;
+      add('info', `${surplus} m de réseau posé sans dépose en face (réseau nouveau) : proposés en CP 15 restructuration (${t15.col}).`);
+    }
+
     // 5. répartition automatique : chaque EOTP de renouvellement reçoit en dépose la quantité posée ; le reste du bien part en AB
     //    réseau : le CP 23 (tubage) puise d'abord dans la partie tubée des biens, le CP 22 dans la partie non tubée
     const infoBrt = new Set();
@@ -454,7 +474,7 @@
         const take = (b, col, q) => { if (q <= 0) return 0; b.auto[col] = (b.auto[col] || 0) + q; rem[b.key] -= q; tub[b.key] = Math.min(tub[b.key], rem[b.key]); return q; };
         const order = (ps.find(p => p.role === 'RES_TUB') ? ['RES_TUB'] : []).concat(ps.filter(p => p.role !== 'RES_TUB').map(p => p.role));
         for (const role of [...new Set(order)]) {
-          const p = ps.find(q => q.role === role); if (!p) continue;
+          const p = ps.find(q => q.role === role); if (!p || p.cp === '15' || role === 'RES_RS') continue; // CP 15 : réseau nouveau, sans dépose
           let need = p.qty;
           const byTube = (x, y) => tub[y.key] - tub[x.key] || rem[y.key] - rem[x.key];
           const byNonTube = (x, y) => (rem[y.key] - tub[y.key]) - (rem[x.key] - tub[x.key]) || rem[y.key] - rem[x.key];
@@ -518,7 +538,7 @@
       const e = { ...c, pose: p ? p.qty : 0, depose: r2(dep), unit: p ? p.unit : (biens.find(b => b.cells[c.col] != null) || {}).unit || 'm' };
       e.renouv = RENEW_CP.includes(e.cp);
       e.ecart = e.pose > 0 ? (e.depose - e.pose) / e.pose : (e.depose > 0 ? Infinity : null);
-      if (e.renouv && (e.pose > 0 || e.depose > 0)) {
+      if (false && e.renouv && (e.pose > 0 || e.depose > 0)) { // test ±10 % abandonné
         e.ok10 = e.depose > 0.9 * e.pose && e.depose < 1.1 * e.pose;
         const q = n => e.unit === 'm' ? `${fr(n)} m` : `${n} ${['27'].includes(e.cp) ? 'ouvrage' : 'branchement'}${n > 1 ? 's' : ''}`;
         if (!e.ok10) add('rouge', `${c.col} (CP ${e.cp}) : écart pose/dépose de ${e.ecart === Infinity ? 'plus de 100' : fr(Math.abs(e.ecart) * 100)} % (> 10 %) — pose : ${q(e.pose)}, dépose : ${q(e.depose)}.`, 'eotp:' + c.col);
@@ -553,7 +573,7 @@
     // 10. EOTP non utilisés (information)
     const used = new Set(Object.keys(cols).concat(pdr.map(p => p.eotp)));
     const unused = elements.filter(e => !used.has(e.code));
-    for (const e of unused) add('info', `EOTP A EXCLURE : ${e.code} (${e.designation || 'sans désignation'}) — rien à y affecter.`, 'eotp:' + e.code);
+    for (const e of unused) add('info', `EOTP A EXCLURE : ${e.code} (${e.designation || 'sans désignation'}) — rien à y affecter, ne pas le reporter dans la dépose (écran ORC).`, 'eotp:' + e.code);
 
     const R = { lines: L, pose, biens, cols: Object.values(cols), eotpTotals, sapDepose, pdr, controls, unused, chantiers,
       elements: elements.map(e => ({ code: e.code, designation: e.designation, cp: e.p.cp })) };

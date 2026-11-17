@@ -1,7 +1,7 @@
 /* VERIF-IMMO — interface. Tout est traité localement dans le navigateur. */
 (function () {
   'use strict';
-  const VERSION = '4.0';
+  const VERSION = '4.1';
   const APPNAME = 'VERIF-IMMO';
   const E = window.VIEngine;
   const STORE_KEY = 'verifimmo.v1';
@@ -457,7 +457,7 @@
       <tbody>${rows || `<tr><td colspan="${g.cols.length + 4}" class="muted">Aucune dépose dans la carto.</td></tr>`}</tbody>
       <tfoot><tr class="ft"><td colspan="3"><b>Dépose par EOTP</b></td>${depRow}<td></td></tr>
       <tr class="ft"><td colspan="3"><b>Pose par EOTP</b> <span class="small muted">(Description technique des EOTP)</span></td>${poseRow}<td></td></tr>
-      <tr class="ft"><td colspan="3"><b>Écart dépose / pose</b> <span class="small muted">(renouvellement, ±10 %)</span></td>${ecartRow}<td></td></tr></tfoot></table></div></div>`;
+</tfoot></table></div></div>`;
   }
 
   function renderResultat(a, R) {
@@ -484,7 +484,7 @@
         <button class="btn sm sec" data-force="${vk}">Forcer le verdict</button></div>
       <div class="card" style="margin-top:14px"><h2>Schéma de l'affaire</h2>${renderSchema(R)}</div>
       <div class="card"><h2>Contrôles</h2>${ctls || '<p class="muted">Aucun point à signaler.</p>'}</div>
-      <p class="small muted" style="margin:0 2px 10px">Répartition proposée : chaque EOTP de renouvellement reçoit en dépose la quantité posée (CP 23 d'abord sur la partie tubée), le reste de chaque bien part en abandon. Mètres arrondis au-dessus. Toutes les cases sont modifiables ; ↺ revient à la proposition.</p>
+      <p class="small muted" style="margin:0 2px 10px">Répartition proposée : chaque EOTP de renouvellement reçoit en dépose la quantité posée (CP 23 d'abord sur la partie tubée), le reste de chaque bien part en abandon ; le réseau posé sans dépose en face (réseau nouveau) part en CP 15. Mètres arrondis au-dessus. Toutes les cases sont modifiables ; ↺ revient à la proposition.</p>
       ${groups(R).map(g => renderMatrix(a, R, g)).join('')}
       <div class="card"><h2>Valeurs à saisir dans SAP (écran ORC)</h2>
         <h3>Description technique des EOTP — quantité réelle</h3><div class="tw"><table><thead><tr><th>EOTP</th><th>CP</th><th>Nat. ouvr.</th><th class="num">Quantité réelle</th></tr></thead><tbody>${sapPose || '<tr><td colspan="4" class="muted">—</td></tr>'}</tbody></table></div>
@@ -577,13 +577,12 @@
       <li><b>Biens déposés</b> : la dépose de la carto est regroupée par bien (matière, classe IN, année), comme dans l'écran ORC. Dépose tubée = Abandonné avec « Longueur SIG » = 0 ou vide.</li>
       <li><b>Proposition</b> : chaque EOTP de renouvellement reçoit en dépose la quantité posée ; le CP 23 puise d'abord dans la partie tubée des biens, le CP 22 dans la partie non tubée. Le reste de chaque bien part en <b>abandon</b> (élément AB).</li>
       <li>Le CA contrôle et modifie toutes les cases (pose et dépose) ; ↺ revient à la proposition. Le reste à répartir de chaque bien doit être nul.</li>
-      <li><b>CP 15</b> (restructuration) : traité comme un EOTP normal ; s'il existe dans SAP, il apparaît en colonne pour y affecter des quantités. Toute autre colonne peut être ajoutée (« + Ajouter une colonne »).</li>
+      <li><b>CP 15</b> (restructuration) : réseau posé là où il n'existait pas. La pose hors tubage qui dépasse la dépose disponible (réseau nouveau) est proposée en CP 15 ; le remplacement d'un réseau existant (conversion de pression, changement de diamètre, ex. PE 32 remplacé par PE 63) reste en CP 22. Toute autre colonne peut être ajoutée (« + Ajouter une colonne »).</li>
       <li>Classes : IN1 &lt; 80 mm ; IN2 de 80 à &lt; 200 mm ; IN3 ≥ 200 mm (diamètre externe).</li></ol>
       <h3>Branchements</h3><ul><li>Une ligne carto = un branchement. Dépose renouvelée = nombre posé ; le reste des branchements déposés part en abandon. Si la carto ne contient aucun branchement déposé, la dépose proposée est égale à la pose (à vérifier dans SAP). Le tubage ne s'applique qu'au réseau.</li></ul>
       <h3>Fonte grise</h3><ul><li>Si la structure SAP contient les CP 17, 18, 20 ou 21 à la place de 22, 23, 25 ou 26, l'appli les utilise.</li></ul>
       <h3>PDR</h3><ul><li>Absents de la carto : détectés dans les désignations SAP (« D00000-PDR00000 »). Nature = Abandon si l'EOTP est sous AB, sinon Pose (catégorie S31E). Le branchement d'un poste est traité comme du réseau ; l'option « Brt PDR » (catégorie P21E) reste disponible ligne par ligne.</li></ul>
       <h3>Contrôles</h3><ul>
-      <li><b>±10 %</b> : sur chaque EOTP de renouvellement (CP 17, 18, 20, 21, 22, 23, 25, 26, 27), la dépose doit être comprise entre 90 % et 110 % de la pose.</li>
       <li><b>CP xx à créer</b> : la règle demande un code plan absent de la structure SAP.</li>
       <li><b>EOTP A EXCLURE</b> (information) : EOTP de la structure sans aucun tronçon affecté.</li></ul>
       <h3>Catégories d'immo</h3><p class="small">CP 03 M10E · 04 P21E · 05 P23E · 06 / 27 P25E (CI) – P24E (CM) · 11 P26E (BREU) – P27E (CIEU) · 15 et 22 M10E (cana) – P21E (Brt PDR) – S31E (PDR) · 16 M10E · 17 / 18 / 23 M10E · 20 / 25 P21E · 21 / 26 P23E · 35 S63E. Sources : tableau des catégories de l'agence ; doc. M-GES-08/11X – M-RES-08/30X p. 18-19 (codes plans) et p. 27-28 (catégories).</p>
@@ -748,7 +747,6 @@
       const tot = c => R.eotpTotals.find(e => e.col === c.col) || { pose: 0, depose: 0 };
       out.push(['Dépose par EOTP', '', '', ...g.cols.map(c => tot(c).depose), '']);
       out.push(['Pose par EOTP', '', '', ...g.cols.map(c => c.cp === 'AB' ? '' : tot(c).pose), '']);
-      out.push(['Écart ±10 %', '', '', ...g.cols.map(c => !tot(c).renouv ? '' : `${pct(tot(c))} ${tot(c).ok10 ? 'OK' : '> 10 %'}`), '']);
       out.push([]);
     }
     return out;
@@ -821,8 +819,7 @@
       const tot = c => R.eotpTotals.find(e => e.col === c.col) || { pose: 0, depose: 0 };
       tbl('Répartition — ' + FAM_LABEL[g.fam] + (R.chantiers.length > 1 ? ' — ' + g.ch : ''), ['Bien déposé', 'Carto', 'À répartir', ...g.cols.map(c => colShort(c.col)), 'Reste'],
         g.biens.map(b => [b.label, b.virtuel ? '—' : fmt(b.exact), fmt(b.cap), ...g.cols.map(c => fmt(b.cells[c.col] || 0)), fmt(b.reste)])
-          .concat([['Dépose par EOTP', '', '', ...g.cols.map(c => fmt(tot(c).depose)), ''], ['Pose par EOTP', '', '', ...g.cols.map(c => c.cp === 'AB' ? '—' : fmt(tot(c).pose)), ''],
-            ['Écart ±10 %', '', '', ...g.cols.map(c => !tot(c).renouv ? '—' : `${pct(tot(c))} ${tot(c).ok10 ? 'OK' : '> 10 %'}`), '']]));
+          .concat([['Dépose par EOTP', '', '', ...g.cols.map(c => fmt(tot(c).depose)), ''], ['Pose par EOTP', '', '', ...g.cols.map(c => c.cp === 'AB' ? '—' : fmt(tot(c).pose)), '']]));
     }
     tbl('Valeurs à saisir dans SAP — Description technique des EOTP', ['EOTP', 'CP', 'Nat. ouvr.', 'Quantité réelle'], R.pose.filter(p => p.qty > 0).map(p => [p.col, p.cp || '', p.categorie, fmtQ(p.qty, p.unit)]));
     tbl('Valeurs à saisir dans SAP — Dépose', ['EOTP', 'CP', 'Bien', 'Mat.', 'IN', 'Année', 'Nat. ouvr.', 'Quantité réelle'], R.sapDepose.map(s => [s.col, s.cp || '', s.label, s.mat, s.IN, s.annee, s.categorie, fmtQ(s.qty, s.unit)]));
