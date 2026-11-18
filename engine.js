@@ -360,20 +360,39 @@
       return { cp: 'AB', eotp: pick.length ? pick[0].code : null, multiple: pick.length > 1, all: pick.map(x => x.code), label: AB_ROLE[role].label };
     }
     const seenMsg = {};
+    // pas de création d'EOTP : seulement un élément de niveau 4 (suffixe I01, I02…) sous le niveau CP
+    const chDefault = chantiers.length === 1 ? chantiers[0] : null;
+    function nextElement(chantier, cp) {
+      const ch = chantier || chDefault;
+      if (!ch) return null;
+      const used = elements.filter(e => e.p.chantier === ch && e.p.cp === cp).map(e => +e.p.elem.slice(1));
+      const n = used.length ? Math.max(...used) + 1 : 1;
+      return `${ch}-${cp}-I${String(n).padStart(2, '0')}`;
+    }
+    const proposed = {};
     function target(chantier, role, isAB) {
       const t = isAB ? findAB(chantier, role) : findCP(chantier, ROLE_CP[role]);
       const key = (chantier || '?') + '|' + role + '|' + (isAB ? 'AB' : 'CP');
+      if (!t.eotp) {
+        // élément à créer : suffixe suivant, réservé par rôle pour ne pas donner deux fois le même
+        if (!proposed[key]) {
+          let code = nextElement(chantier, t.cp);
+          if (code) { const taken = new Set(Object.values(proposed)); while (taken.has(code)) { const m = code.match(/-I(\d+)$/); code = code.replace(/-I\d+$/, '-I' + String(+m[1] + 1).padStart(2, '0')); } }
+          proposed[key] = code || (isAB ? t.label : 'CP ' + t.cp);
+        }
+        t.proposed = proposed[key];
+      }
       if (!t.eotp && !seenMsg[key]) {
         seenMsg[key] = 1;
         add('rouge', isAB
-          ? `Élément « ${t.label} » absent de la liste SAP${chantier ? ' (' + chantier + ')' : ''} : à créer ou à vérifier.`
-          : `CP ${t.cp} à créer${chantier ? ' (' + chantier + ')' : ''} : aucun élément d'OTP en CP ${ROLE_CP[role].join(' ou ')} dans la liste SAP.`);
+          ? `Créer l'élément de niveau 4 ${t.proposed} (${t.label.replace(/^AB /, 'abandon ')}) : aucun élément AB correspondant dans la liste SAP.`
+          : `Créer l'élément de niveau 4 ${t.proposed} (CP ${t.cp}) : aucun élément en CP ${ROLE_CP[role].join(' ou ')} dans la liste SAP.`);
       } else if (t.multiple && !seenMsg[key + 'm']) {
         seenMsg[key + 'm'] = 1;
         add('orange', `Plusieurs EOTP possibles pour ${isAB ? t.label : 'le CP ' + t.cp} : ${t.all.join(', ')}. ${t.eotp} retenu par défaut — modifier la répartition si besoin.`);
       }
-      // colonne de repli quand l'EOTP n'existe pas : « CP 23 à créer »
-      t.col = t.eotp || (isAB ? `${t.label} (à créer)` : `CP ${t.cp} à créer`);
+      // colonne de repli quand l'élément n'existe pas : « RV4-…-C1-15-I01 (à créer) »
+      t.col = t.eotp || `${t.proposed} (à créer)`;
       t.toCreate = !t.eotp;
       return t;
     }
@@ -461,7 +480,7 @@
       p15.role = 'RES_RS'; p15.auto += surplus; p15.exact = r2(p15.exact + surplus);
       const f15 = forces['POSE:' + p15.col]; p15.qty = f15 ? +f15.value : p15.auto; p15.forced = !!f15; p15.categorie = categorie('15', 'RES');
       p22.auto = avail; p22.qty = avail;
-      add('info', `${surplus} m de réseau posé en tranchée sans dépose en face : proposés en CP 15 restructuration (${t15.col}).`);
+      add('info', `${surplus} m de réseau posé en tranchée sans dépose en face : proposés en CP 15 restructuration (${t15.eotp || t15.proposed + ', élément à créer'}).`);
     }
 
     // 5. répartition automatique (règle tirée des fiches de correction des CA) :
@@ -524,7 +543,8 @@
       }
       for (const col of Object.keys(b.cells)) {
         const pc = parseEotpCode(col);
-        addCol(col, { eotp: pc ? col : null, cp: pc ? pc.cp : (col.match(/CP (\w+)/) || [])[1] || (/AB/.test(col) ? 'AB' : null), toCreate: !pc, fam: b.fam });
+        const pc2 = parseEotpCode(col.split(' ')[0]);
+        addCol(col, { eotp: pc ? col : null, cp: pc ? pc.cp : (pc2 ? pc2.cp : ((col.match(/CP (\w+)/) || [])[1] || (/AB/.test(col) ? 'AB' : null))), toCreate: !pc, fam: b.fam });
       }
       b.total = Object.values(b.cells).reduce((s, v) => s + (+v || 0), 0);
       b.reste = r2(b.cap - b.total);

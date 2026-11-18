@@ -1,7 +1,7 @@
 /* VERIF-IMMO — interface. Tout est traité localement dans le navigateur. */
 (function () {
   'use strict';
-  const VERSION = '4.5';
+  const VERSION = '4.6';
   const APPNAME = 'VERIF-IMMO';
   const E = window.VIEngine;
   const STORE_KEY = 'verifimmo.v1';
@@ -364,7 +364,7 @@
   const CPCLS = cp => cp === '23' || cp === '18' ? 'c23' : cp === 'AB' ? 'cab' : cp ? 'c22' : 'none';
   function eotpOptions(R) { return R.elements.map(e => [e.code, e.code + ' — ' + (e.designation || '')]); }
   const FAM_LABEL = { RES: 'Réseau', BI: 'Branchements individuels', BC: 'Branchements collectifs', CI: 'CI', CM: 'CM' };
-  const colShort = c => { const p = E.parseEotpCode(c); return p ? c.split('-').slice(-2).join('-') : c; };
+  const colShort = c => { const code = String(c).split(' ')[0]; const p = E.parseEotpCode(code); return p ? code.split('-').slice(-2).join('-') : c; };
   const colColor = (cp, C) => cp === '23' || cp === '18' ? C.c23 : cp === 'AB' ? C.cab : cp === '15' ? '#7a5cc4' : (cp === '25' || cp === '26' || cp === '20' || cp === '21' || cp === '27') ? C.cbr : C.c22;
   // colonnes d'une famille : pose + dépose de la famille
   function famCols(R, fam, ch) {
@@ -419,7 +419,7 @@
   function renderMatrix(a, R, g) {
     const u = g.fam === 'RES' ? ' m' : '';
     const orc = R.orc;
-    const colHead = g.cols.map(c => `<th class="num" title="${esc(c.col)}"><span class="pill ${CPCLS(c.cp)}">${esc(c.cp || '?')}</span><br>${esc(colShort(c.col))}${c.toCreate ? '<br><span class="pill none">à créer</span>' : ''}</th>`).join('');
+    const colHead = g.cols.map(c => `<th class="num" title="${esc(c.col)}"><span class="pill ${CPCLS(c.cp)}">${esc(c.cp || '?')}</span><br>${esc(colShort(c.col))}${c.toCreate ? '<br><span class="pill none">élément à créer</span>' : ''}</th>`).join('');
     const rows = g.biens.map(b => {
       const cells = g.cols.map(c => {
         const key = `REP:${b.key}|${c.col}`;
@@ -597,7 +597,7 @@
       <h3>Fonte grise</h3><ul><li>Si la structure SAP contient les CP 17, 18, 20 ou 21 à la place de 22, 23, 25 ou 26, l'appli les utilise.</li></ul>
       <h3>PDR</h3><ul><li>Absents de la carto : détectés dans les désignations SAP (« D00000-PDR00000 »). Nature = Abandon si l'EOTP est sous AB, sinon Pose (catégorie S31E). Le branchement d'un poste est traité comme du réseau ; l'option « Brt PDR » (catégorie P21E) reste disponible ligne par ligne.</li></ul>
       <h3>Contrôles</h3><ul>
-      <li><b>CP xx à créer</b> : la règle demande un code plan absent de la structure SAP.</li>
+      <li><b>Élément à créer</b> : pas de création d'EOTP, seulement un élément de niveau 4 (suffixe I01, I02…) sous le niveau CP ou AB ; l'appli propose le suffixe suivant libre.</li>
       <li><b>EOTP A EXCLURE</b> (information) : EOTP de la structure sans aucun tronçon affecté.</li></ul>
       <h3>Catégories d'immo</h3><p class="small">CP 03 M10E · 04 P21E · 05 P23E · 06 / 27 P25E (CI) – P24E (CM) · 11 P26E (BREU) – P27E (CIEU) · 15 et 22 M10E (cana) – P21E (Brt PDR) – S31E (PDR) · 16 M10E · 17 / 18 / 23 M10E · 20 / 25 P21E · 21 / 26 P23E · 35 S63E. Sources : tableau des catégories de l'agence ; doc. M-GES-08/11X – M-RES-08/30X p. 18-19 (codes plans) et p. 27-28 (catégories).</p>
       <h3>Forçage</h3><ul><li>Toute valeur calculée peut être forcée (✎) avec un commentaire. Les valeurs forcées sont surlignées en violet, ne sont jamais écrasées par un recalcul et figurent dans la trace et les exports.</li></ul>
