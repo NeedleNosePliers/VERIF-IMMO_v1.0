@@ -1,7 +1,7 @@
 /* VERIF-IMMO — interface. Tout est traité localement dans le navigateur. */
 (function () {
   'use strict';
-  const VERSION = '4.4';
+  const VERSION = '4.5';
   const APPNAME = 'VERIF-IMMO';
   const E = window.VIEngine;
   const STORE_KEY = 'verifimmo.v1';
@@ -497,7 +497,7 @@
         <button class="btn sm sec" data-force="${vk}">Forcer le verdict</button></div>
       <div class="card" style="margin-top:14px"><h2>Schéma de l'affaire</h2>${renderSchema(R)}</div>
       <div class="card"><h2>Contrôles</h2>${ctls || '<p class="muted">Aucun point à signaler.</p>'}</div>
-      <p class="small muted" style="margin:0 2px 10px">Répartition proposée : chaque EOTP de renouvellement reçoit en dépose la quantité posée, en puisant dans les biens du plus ancien au plus récent (CP 22 d'abord, puis CP 23) ; le reste des biens les plus récents part en abandon ; le réseau posé sans dépose en face (réseau nouveau) part en CP 15. Mètres arrondis au-dessus. Toutes les cases sont modifiables ; ↺ revient à la proposition.</p>
+      <p class="small muted" style="margin:0 2px 10px">Répartition proposée : chaque EOTP de renouvellement reçoit en dépose la quantité posée, en puisant dans les biens du plus ancien au plus récent (CP 22 d'abord, puis CP 23) ; le reste des biens les plus récents part en abandon ; la pose en tranchée sans dépose en face part en CP 15. Mètres arrondis au-dessus. Toutes les cases sont modifiables ; ↺ revient à la proposition.</p>
       ${groups(R).map(g => renderMatrix(a, R, g)).join('')}
       ${renderAbManual(a, R)}
       <div class="card"><h2>Valeurs à saisir dans SAP (écran ORC)</h2>
@@ -591,7 +591,7 @@
       <li><b>Biens déposés</b> : la dépose de la carto est regroupée par bien (matière, classe IN, année), comme dans l'écran ORC. Dépose tubée = Abandonné avec « Longueur SIG » = 0 ou vide.</li>
       <li><b>Proposition</b> : chaque EOTP de renouvellement reçoit en dépose la quantité posée, en puisant dans les biens <b>du plus ancien au plus récent</b>, CP 22 d'abord puis CP 23. Ce qui reste des biens les plus récents part en <b>abandon</b> (élément AB). Règle vérifiée sur la fiche de correction de l'affaire Cristol.</li>
       <li>Le CA contrôle et modifie toutes les cases (pose et dépose) ; ↺ revient à la proposition. Le reste à répartir de chaque bien doit être nul.</li>
-      <li><b>CP 15</b> (restructuration) : réseau posé là où il n'existait pas. La pose hors tubage qui dépasse la dépose disponible (réseau nouveau) est proposée en CP 15 ; le remplacement d'un réseau existant (conversion de pression, changement de diamètre, ex. PE 32 remplacé par PE 63) reste en CP 22. Toute autre colonne peut être ajoutée (« + Ajouter une colonne »).</li>
+      <li><b>CP 15</b> (restructuration) : <b>pose en tranchée sans dépose</b>. La pose en fouille qui dépasse la dépose disponible est proposée en CP 15 ; la pose en fouille qui remplace un réseau déposé (conversion de pression, changement de diamètre, ex. PE 32 remplacé par PE 63) reste en CP 22. Toute autre colonne peut être ajoutée (« + Ajouter une colonne »).</li>
       <li>Classes : IN1 &lt; 80 mm ; IN2 de 80 à &lt; 200 mm ; IN3 ≥ 200 mm (diamètre externe).</li></ol>
       <h3>Branchements</h3><ul><li>Une ligne carto = un branchement. Le type suit le poste technique quand il est renseigné : poste « BRC » → collectif (CP 26), poste « BRI » → individuel (CP 25). Dépose renouvelée = nombre posé ; le reste des branchements déposés part en abandon. Si la carto ne contient aucun branchement déposé, la dépose proposée est égale à la pose (à vérifier dans SAP). Les branchements, CI et CM abandonnés absents de la carto se saisissent dans « Abandons hors carto ». Le tubage ne s'applique qu'au réseau.</li></ul>
       <h3>Fonte grise</h3><ul><li>Si la structure SAP contient les CP 17, 18, 20 ou 21 à la place de 22, 23, 25 ou 26, l'appli les utilise.</li></ul>

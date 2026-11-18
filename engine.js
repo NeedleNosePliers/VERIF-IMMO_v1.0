@@ -461,7 +461,7 @@
       p15.role = 'RES_RS'; p15.auto += surplus; p15.exact = r2(p15.exact + surplus);
       const f15 = forces['POSE:' + p15.col]; p15.qty = f15 ? +f15.value : p15.auto; p15.forced = !!f15; p15.categorie = categorie('15', 'RES');
       p22.auto = avail; p22.qty = avail;
-      add('info', `${surplus} m de réseau posé sans dépose en face (réseau nouveau) : proposés en CP 15 restructuration (${t15.col}).`);
+      add('info', `${surplus} m de réseau posé en tranchée sans dépose en face : proposés en CP 15 restructuration (${t15.col}).`);
     }
 
     // 5. répartition automatique (règle tirée des fiches de correction des CA) :
