@@ -107,7 +107,7 @@
     commune: ['nom de la commune'],
     eotpDepose: ['eotp ouvrage de depose'],
     eotpPose: ['eotp ouvrage de pose'],
-    posteTech: ['n° poste technique', 'no poste technique', 'n poste technique'],
+    posteTech: ['n° poste technique', 'no poste technique', 'n poste technique', 'poste technique'],
     technique: ['technique de pose'],
     commentaire: ['commentaire']
   };
@@ -193,7 +193,10 @@
 
   // Valeurs automatiques d'une ligne
   function autoAttrs(l, kind) {
-    const type = typeOf(l.fonction);
+    let type = typeOf(l.fonction);
+    // branchement rattaché à un poste technique de branchement collectif (…-BRC…) : compté en collectif (fiche de correction Cristol)
+    if (type === 'BI' && /-BRC\d/i.test(l.posteTech || '')) type = 'BC';
+    if (type === 'BC' && /-BRI\d/i.test(l.posteTech || '')) type = 'BI';
     const k = l.lSig == null ? 0 : l.lSig; // K vide = 0
     const abandonne = /abandon/.test(norm(l.etat));
     const tubage = type === 'RES' && (kind === 'pose'
