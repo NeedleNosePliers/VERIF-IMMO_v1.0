@@ -1,7 +1,7 @@
 /* VERIF-IMMO — interface. Tout est traité localement dans le navigateur. */
 (function () {
   'use strict';
-  const VERSION = '4.1';
+  const VERSION = '4.2';
   const APPNAME = 'VERIF-IMMO';
   const E = window.VIEngine;
   const STORE_KEY = 'verifimmo.v1';
@@ -484,7 +484,7 @@
         <button class="btn sm sec" data-force="${vk}">Forcer le verdict</button></div>
       <div class="card" style="margin-top:14px"><h2>Schéma de l'affaire</h2>${renderSchema(R)}</div>
       <div class="card"><h2>Contrôles</h2>${ctls || '<p class="muted">Aucun point à signaler.</p>'}</div>
-      <p class="small muted" style="margin:0 2px 10px">Répartition proposée : chaque EOTP de renouvellement reçoit en dépose la quantité posée (CP 23 d'abord sur la partie tubée), le reste de chaque bien part en abandon ; le réseau posé sans dépose en face (réseau nouveau) part en CP 15. Mètres arrondis au-dessus. Toutes les cases sont modifiables ; ↺ revient à la proposition.</p>
+      <p class="small muted" style="margin:0 2px 10px">Répartition proposée : chaque EOTP de renouvellement reçoit en dépose la quantité posée, en puisant dans les biens du plus ancien au plus récent (CP 22 d'abord, puis CP 23) ; le reste des biens les plus récents part en abandon ; le réseau posé sans dépose en face (réseau nouveau) part en CP 15. Mètres arrondis au-dessus. Toutes les cases sont modifiables ; ↺ revient à la proposition.</p>
       ${groups(R).map(g => renderMatrix(a, R, g)).join('')}
       <div class="card"><h2>Valeurs à saisir dans SAP (écran ORC)</h2>
         <h3>Description technique des EOTP — quantité réelle</h3><div class="tw"><table><thead><tr><th>EOTP</th><th>CP</th><th>Nat. ouvr.</th><th class="num">Quantité réelle</th></tr></thead><tbody>${sapPose || '<tr><td colspan="4" class="muted">—</td></tr>'}</tbody></table></div>
@@ -575,7 +575,7 @@
       <h3>Répartition (onglet 3)</h3><ol>
       <li><b>Pose par EOTP</b> : réseau posé en tubage (technique de pose contenant « Tubage ») → CP 23 ; autre réseau → CP 22 ; branchements individuels (courant, GC) → CP 25 ; collectifs → CP 26. Longueur installée, arrondie au mètre supérieur.</li>
       <li><b>Biens déposés</b> : la dépose de la carto est regroupée par bien (matière, classe IN, année), comme dans l'écran ORC. Dépose tubée = Abandonné avec « Longueur SIG » = 0 ou vide.</li>
-      <li><b>Proposition</b> : chaque EOTP de renouvellement reçoit en dépose la quantité posée ; le CP 23 puise d'abord dans la partie tubée des biens, le CP 22 dans la partie non tubée. Le reste de chaque bien part en <b>abandon</b> (élément AB).</li>
+      <li><b>Proposition</b> : chaque EOTP de renouvellement reçoit en dépose la quantité posée, en puisant dans les biens <b>du plus ancien au plus récent</b>, CP 22 d'abord puis CP 23. Ce qui reste des biens les plus récents part en <b>abandon</b> (élément AB). Règle vérifiée sur la fiche de correction de l'affaire Cristol.</li>
       <li>Le CA contrôle et modifie toutes les cases (pose et dépose) ; ↺ revient à la proposition. Le reste à répartir de chaque bien doit être nul.</li>
       <li><b>CP 15</b> (restructuration) : réseau posé là où il n'existait pas. La pose hors tubage qui dépasse la dépose disponible (réseau nouveau) est proposée en CP 15 ; le remplacement d'un réseau existant (conversion de pression, changement de diamètre, ex. PE 32 remplacé par PE 63) reste en CP 22. Toute autre colonne peut être ajoutée (« + Ajouter une colonne »).</li>
       <li>Classes : IN1 &lt; 80 mm ; IN2 de 80 à &lt; 200 mm ; IN3 ≥ 200 mm (diamètre externe).</li></ol>

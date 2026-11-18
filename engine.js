@@ -461,36 +461,30 @@
       add('info', `${surplus} m de réseau posé sans dépose en face (réseau nouveau) : proposés en CP 15 restructuration (${t15.col}).`);
     }
 
-    // 5. répartition automatique : chaque EOTP de renouvellement reçoit en dépose la quantité posée ; le reste du bien part en AB
-    //    réseau : le CP 23 (tubage) puise d'abord dans la partie tubée des biens, le CP 22 dans la partie non tubée
+    // 5. répartition automatique (règle tirée des fiches de correction des CA) :
+    //    les EOTP de renouvellement puisent dans les biens du plus ancien au plus récent, CP 22 (fouille) d'abord puis CP 23 (tubage) ;
+    //    chaque EOTP reçoit en dépose la quantité posée ; ce qui reste des biens les plus récents part en abandon
     const infoBrt = new Set();
+    const rankRole = r => r === 'RES_HT' ? 0 : r === 'RES_TUB' ? 1 : 2;
     for (const ch of [...new Set(pose.map(p => p.chantier).concat(biens.map(b => b.chantier)))]) {
       for (const F of ['RES', 'BI', 'BC', 'CI', 'CM']) {
         const bs = biens.filter(b => b.chantier === ch && b.fam === F);
         const ps = pose.filter(p => p.chantier === ch && p.fam === F);
         if (!bs.length && !ps.length) continue;
-        const rem = {}, tub = {};
-        bs.forEach(b => { rem[b.key] = b.cap; tub[b.key] = b.tubeCap; });
-        const take = (b, col, q) => { if (q <= 0) return 0; b.auto[col] = (b.auto[col] || 0) + q; rem[b.key] -= q; tub[b.key] = Math.min(tub[b.key], rem[b.key]); return q; };
-        const order = (ps.find(p => p.role === 'RES_TUB') ? ['RES_TUB'] : []).concat(ps.filter(p => p.role !== 'RES_TUB').map(p => p.role));
-        for (const role of [...new Set(order)]) {
-          const p = ps.find(q => q.role === role); if (!p || p.cp === '15' || role === 'RES_RS') continue; // CP 15 : réseau nouveau, sans dépose
+        const rem = {};
+        bs.forEach(b => { rem[b.key] = b.cap; });
+        const take = (b, col, q) => { if (q <= 0) return 0; b.auto[col] = (b.auto[col] || 0) + q; rem[b.key] -= q; return q; };
+        const oldestFirst = (x, y) => (+x.annee || 9999) - (+y.annee || 9999) || y.cap - x.cap;
+        for (const p of ps.slice().sort((x, y) => rankRole(x.role) - rankRole(y.role))) {
+          if (p.cp === '15' || p.role === 'RES_RS') continue; // CP 15 : réseau nouveau, sans dépose
           let need = p.qty;
-          const byTube = (x, y) => tub[y.key] - tub[x.key] || rem[y.key] - rem[x.key];
-          const byNonTube = (x, y) => (rem[y.key] - tub[y.key]) - (rem[x.key] - tub[x.key]) || rem[y.key] - rem[x.key];
-          if (role === 'RES_TUB') {
-            for (const b of bs.slice().sort(byTube)) need -= take(b, p.col, Math.min(need, tub[b.key]));
-            for (const b of bs.slice().sort(byNonTube)) need -= take(b, p.col, Math.min(need, rem[b.key]));
-          } else {
-            for (const b of bs.slice().sort(byNonTube)) need -= take(b, p.col, Math.min(need, rem[b.key] - tub[b.key]));
-            for (const b of bs.slice().sort(byTube)) need -= take(b, p.col, Math.min(need, rem[b.key]));
-          }
+          for (const b of bs.slice().sort(oldestFirst)) need -= take(b, p.col, Math.min(need, rem[b.key]));
           // branchements posés sans branchements déposés dans la carto : dépose proposée = pose (à vérifier)
           if (need > 0 && F !== 'RES' && !bs.length) {
             const key = `${ch}|${F}`;
             const b = { key, chantier: ch, type: F, fam: F, mat: '', IN: '', annee: '', insee: '', unit: 'u', exact: 0, exactTube: 0, lines: [], cap: need, tubeCap: 0,
               label: TYPE_LABEL[F], cells: {}, auto: {}, virtuel: true };
-            biens.push(b); bs.push(b); rem[key] = need; tub[key] = 0;
+            biens.push(b); bs.push(b); rem[key] = need;
             need -= take(b, p.col, need);
             infoBrt.add(`${TYPE_LABEL[F]} : aucun branchement déposé dans la carto — dépose proposée égale à la pose (${b.cap}), à vérifier dans SAP.`);
           }
