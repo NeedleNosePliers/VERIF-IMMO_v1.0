@@ -469,11 +469,14 @@
     //    chaque EOTP reçoit en dépose la quantité posée ; ce qui reste des biens les plus récents part en abandon
     const infoBrt = new Set();
     const rankRole = r => r === 'RES_HT' ? 0 : r === 'RES_TUB' ? 1 : 2;
-    for (const ch of [...new Set(pose.map(p => p.chantier).concat(biens.map(b => b.chantier)))]) {
+    const abMan = state.abManual || {}; // abandons hors carto saisis par le CA (branchements, CI, CM)
+    const chList = [...new Set(pose.map(p => p.chantier).concat(biens.map(b => b.chantier)).concat(chantiers.slice(0, 1)))];
+    for (const ch of chList) {
       for (const F of ['RES', 'BI', 'BC', 'CI', 'CM']) {
+        const nMan = F !== 'RES' && ch === chList[0] ? Math.max(0, Math.round(+abMan[F] || 0)) : 0;
         const bs = biens.filter(b => b.chantier === ch && b.fam === F);
         const ps = pose.filter(p => p.chantier === ch && p.fam === F);
-        if (!bs.length && !ps.length) continue;
+        if (!bs.length && !ps.length && !nMan) continue;
         const rem = {};
         bs.forEach(b => { rem[b.key] = b.cap; });
         const take = (b, col, q) => { if (q <= 0) return 0; b.auto[col] = (b.auto[col] || 0) + q; rem[b.key] -= q; return q; };
@@ -491,6 +494,13 @@
             need -= take(b, p.col, need);
             infoBrt.add(`${TYPE_LABEL[F]} : aucun branchement déposé dans la carto — dépose proposée égale à la pose (${b.cap}), à vérifier dans SAP.`);
           }
+        }
+        // abandons hors carto saisis par le CA : ajoutés au bien du type, et donc en abandon
+        if (nMan) {
+          const key = `${ch}|${F}`;
+          let b = bs.find(x => x.key === key);
+          if (!b) { b = { key, chantier: ch, type: F, fam: F, mat: '', IN: '', annee: '', insee: '', unit: 'u', exact: 0, exactTube: 0, lines: [], cap: 0, tubeCap: 0, label: TYPE_LABEL[F], cells: {}, auto: {}, virtuel: true }; biens.push(b); bs.push(b); rem[key] = 0; }
+          b.cap += nMan; rem[key] += nMan; b.manuel = nMan;
         }
         // reste des biens -> AB
         const tAB = bs.some(b => rem[b.key] > 0) ? target(ch, F, true) : null;
@@ -644,7 +654,7 @@
       const app = poseApp[e.eotp] ?? 0;
       out.pose.push({ ...e, app, ok: e.reel != null && Math.abs(e.reel - app) < EPS });
     }
-    for (const k of Object.keys(poseApp)) if (!seenP.has(k)) out.pose.push({ eotp: k, prev: null, reel: null, unit: (R.pose.find(p => p.eotp === k) || {}).unit === 'm' ? 'M' : 'PCE', nat: '', app: poseApp[k], ok: false, absent: true });
+    if ((orc.eotpRows || []).length) for (const k of Object.keys(poseApp)) if (!seenP.has(k)) out.pose.push({ eotp: k, prev: null, reel: null, unit: (R.pose.find(p => p.eotp === k) || {}).unit === 'm' ? 'M' : 'PCE', nat: '', app: poseApp[k], ok: false, absent: true });
     // dépose : par EOTP + matière + IN + année (réseau), par EOTP (branchements, postes)
     const depApp = {};
     for (const s of R.sapDepose) if (s.eotp) { const k = s.type === 'RES' ? orcKey(s.eotp, s.mat, s.IN, s.annee) : orcKey(s.eotp); depApp[k] = (depApp[k] || 0) + s.qty; }
@@ -656,7 +666,7 @@
       const app = depApp[k] ?? 0;
       out.depose.push({ ...d, key: k, app, ok: d.reel != null && Math.abs(d.reel - app) < EPS });
     }
-    for (const k of Object.keys(depApp)) if (!seenD.has(k)) {
+    if ((orc.deposeRows || []).length) for (const k of Object.keys(depApp)) if (!seenD.has(k)) {
       const [eotp, mat, IN, annee] = k.split('|');
       out.depose.push({ eotp, mat: mat === '-' ? '' : mat, IN: IN || null, annee: annee ? +annee : null, designation: '', prev: null, reel: null, unit: mat !== '-' ? 'M' : 'PCE', app: depApp[k], ok: false, absent: true, key: k });
     }
