@@ -1,7 +1,7 @@
 /* VERIF-IMMO — interface. Tout est traité localement dans le navigateur. */
 (function () {
   'use strict';
-  const VERSION = '4.6';
+  const VERSION = '4.7';
   const APPNAME = 'VERIF-IMMO';
   const E = window.VIEngine;
   const STORE_KEY = 'verifimmo.v1';
@@ -460,6 +460,21 @@
 </tfoot></table></div></div>`;
   }
 
+  // bilan : total pose, total dépose, différence (par famille)
+  function bilan(R) {
+    return groups(R).map(g => {
+      const pose = g.pose.reduce((t, p) => t + (+p.qty || 0), 0);
+      const dep = g.biens.reduce((t, b) => t + (+b.cap || 0), 0);
+      return { label: FAM_LABEL[g.fam] + (R.chantiers.length > 1 ? ' — ' + g.ch : ''), unit: g.fam === 'RES' ? 'm' : 'u', pose, dep, diff: dep - pose };
+    });
+  }
+  const sensDiff = x => x.diff > 0 ? `${fmtQ(x.diff, x.unit)} de dépose en plus → abandon` : x.diff < 0 ? `${fmtQ(-x.diff, x.unit)} de pose en plus → pose sans dépose (CP 15 pour le réseau)` : 'équilibré';
+  function renderBilan(R) {
+    const rows = bilan(R).map(x => `<tr><td><b>${esc(x.label)}</b></td><td class="num">${fmtQ(x.pose, x.unit)}</td><td class="num">${fmtQ(x.dep, x.unit)}</td>
+      <td class="num"><b>${x.diff > 0 ? '+' : ''}${fmtQ(x.diff, x.unit)}</b></td><td>${esc(sensDiff(x))}</td></tr>`).join('');
+    return rows ? `<div class="card"><h2>Bilan pose / dépose</h2><div class="tw"><table><thead><tr><th></th><th class="num">Total pose</th><th class="num">Total dépose</th><th class="num">Différence (dépose − pose)</th><th>Lecture</th></tr></thead><tbody>${rows}</tbody></table></div></div>` : '';
+  }
+
   // branchements / CI / CM abandonnés absents de la carto : saisis par le CA
   function renderAbManual(a, R) {
     const m = a.abManual || {};
@@ -495,7 +510,8 @@
     return `<div class="verdict ${ok ? 'ok' : 'ko'}"><span class="grow">${ok ? '✔' : '✖'} ${esc(R.verdict)}</span>
         ${isForced(vk) ? `<span class="forced small">forcé (auto : ${esc(R.autoVerdict)})</span>` : ''}
         <button class="btn sm sec" data-force="${vk}">Forcer le verdict</button></div>
-      <div class="card" style="margin-top:14px"><h2>Schéma de l'affaire</h2>${renderSchema(R)}</div>
+      <div style="margin-top:14px">${renderBilan(R)}</div>
+      <div class="card"><h2>Schéma de l'affaire</h2>${renderSchema(R)}</div>
       <div class="card"><h2>Contrôles</h2>${ctls || '<p class="muted">Aucun point à signaler.</p>'}</div>
       <p class="small muted" style="margin:0 2px 10px">Répartition proposée : chaque EOTP de renouvellement reçoit en dépose la quantité posée, en puisant dans les biens du plus ancien au plus récent (CP 22 d'abord, puis CP 23) ; le reste des biens les plus récents part en abandon ; la pose en tranchée sans dépose en face part en CP 15. Mètres arrondis au-dessus. Toutes les cases sont modifiables ; ↺ revient à la proposition.</p>
       ${groups(R).map(g => renderMatrix(a, R, g)).join('')}
@@ -776,6 +792,7 @@
     const add = (name, aoa, widths) => { const ws = XLSX.utils.aoa_to_sheet(aoa); if (widths) ws['!cols'] = widths.map(w => ({ wch: w })); XLSX.utils.book_append_sheet(wb, ws, name); };
     add('Synthèse', [[APPNAME + ' Ver.' + VERSION], ['Affaire', a.nom], ['Édité le', nowStr()], ['Fichier pose', a.pose ? a.pose.fileName : ''], ['Fichier dépose', a.depose ? a.depose.fileName : ''],
       ['Verdict', R.verdict + (a.forces.VERDICT ? ' (forcé, auto : ' + R.autoVerdict + ')' : '')], [], ['Niveau', 'Contrôle'], ...R.controls.map(c => [c.level, c.msg])], [18, 120]);
+    add('Bilan', [['', 'Total pose', 'Total dépose', 'Différence (dépose − pose)', 'Unité', 'Lecture'], ...bilan(R).map(x => [x.label, x.pose, x.dep, x.diff, x.unit === 'm' ? 'm' : 'nb', sensDiff(x)])], [30, 12, 12, 24, 6, 60]);
     add('Répartition', matrixAoa(R), [30, 10, 11, 26, 26, 26, 26, 26, 10]);
     add('Saisie SAP (ORC)', [['Tableau', 'EOTP', 'CP', 'Bien', 'Mat.', 'IN', 'Année', 'Nat. ouvr.', 'Quantité réelle', 'Unité'],
       ...R.pose.filter(p => p.qty > 0).map(p => ['Description technique des EOTP', p.col, p.cp, '', '', '', '', p.categorie, p.qty, p.unit === 'm' ? 'M' : 'PCE']),
@@ -833,6 +850,7 @@
       doc.autoTable({ startY: y + 2, head: [head], body: body.length ? body : [['—']], styles: { fontSize: 7.5, cellPadding: 1.2 }, headStyles: { fillColor: blue }, margin: { left: 10, right: 10 }, ...opts });
       y = doc.lastAutoTable.finalY + 8;
     };
+    tbl('Bilan pose / dépose', ['', 'Total pose', 'Total dépose', 'Différence (dépose − pose)', 'Lecture'], bilan(R).map(x => [x.label, fmtQ(x.pose, x.unit), fmtQ(x.dep, x.unit), (x.diff > 0 ? '+' : '') + fmtQ(x.diff, x.unit), sensDiff(x)]));
     tbl('Contrôles', ['Niveau', 'Contrôle'], R.controls.map(c => [c.level.toUpperCase(), c.msg]), { columnStyles: { 0: { cellWidth: 18 } } });
     for (const g of groups(R)) {
       const tot = c => R.eotpTotals.find(e => e.col === c.col) || { pose: 0, depose: 0 };
