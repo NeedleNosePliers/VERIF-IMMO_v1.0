@@ -19,7 +19,7 @@
 
   // Rôle abandon -> reconnaissance de l'élément AB par sa désignation
   const AB_ROLE = {
-    RES: { label: 'AB réseau', re: /r[ée]seau|\bABD\b|canalisation|\bcana\b|conduite(?! montante| d.immeuble)/i },
+    RES: { label: 'AB réseau', re: /r[ée]seau|\bABD\b|canalisation|\bcana\b|conduite(?! montante| d.immeuble)|\d+(?:[,.]\d+)?\s*m(?![a-zé])|2GS|\bfonte\b|\bacier\b|\bPE\s?\d/i }, // « Abandon 10 m 2GS 118 BP »
     BI: { label: 'AB branchement individuel', re: /individuel|\bindiv/i },
     BC: { label: 'AB branchement collectif', re: /collectif|\bcollect/i },
     CI: { label: 'AB CI', re: /^\s*CI\b|conduite d.immeuble/i },
