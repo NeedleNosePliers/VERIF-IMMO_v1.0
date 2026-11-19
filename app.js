@@ -1,7 +1,7 @@
 /* VERIF-IMMO — interface. Tout est traité localement dans le navigateur. */
 (function () {
   'use strict';
-  const VERSION = '6.2';
+  const VERSION = '6.3';
   const APPNAME = 'VERIF-IMMO';
   const E = window.VIEngine;
   const STORE_KEY = 'verifimmo.v1';
@@ -428,6 +428,43 @@
     for (const x of C.dates) out.push(['Date réelle dép/ab', `${x.eotp} — ${x.label}`, x.attendu, x.sap, 'à vérifier']);
     return out;
   }
+  // ----- quoi mettre dans SAP, EOTP par EOTP, présenté comme la fenêtre « élément OTP », onglet Descr. tech. -----
+  const sapDate = d => String(d || '').replace(/\//g, '.'); // SAP affiche et attend jj.mm.aaaa
+  function renderSaisieDt(a, R) {
+    const ordre = c => { const k = (a.eotps || []).findIndex(e => e.code === String(c).split(' ')[0]); return k < 0 ? 999 : k; };
+    const list = R.pose.filter(p => p.qty > 0).sort((x, y) => ordre(x.col) - ordre(y.col));
+    if (!list.length) return '';
+    const n = list.length, i = Math.min(Math.max(0, ui.dtIdx || 0), n - 1);
+    const p = list[i];
+    const el = (a.eotps || []).find(e => e.code === p.eotp) || {};
+    const chk = {}; if (R.dt) for (const r of R.dt.rows) if (r.eotp === p.eotp) chk[r.champ] = r;
+    const etat = champ => { const r = chk[champ]; if (!r || r.info === 'pas de capture') return ''; const v = sapDate(r.sap); if (r.ok === true) return `<span class="sapchk ok">SAP : ${esc(v)} ✔</span>`; if (r.ok === false) return `<span class="sapchk ko">SAP : ${esc(v)} ✖</span>`; return `<span class="sapchk">${esc(r.info || '')}</span>`; };
+    const mats = [...(p.dtMat || [])], diams = [...(p.dtDiam || [])].sort((x, y) => x - y), press = [...(p.dtPress || [])];
+    const f = (label, val, champ, saisir, note) => `<div class="sapf"><span class="sapl">${label}</span><span class="sapv ${saisir ? 'saisir' : ''}">${esc(val || '')}</span>${note ? `<span class="small muted">${esc(note)}</span>` : ''}${champ ? etat(champ) : ''}</div>`;
+    const cap = R.dt && R.dt.captures.some(c => c.eotpRetenu === p.eotp);
+    return `<div class="card sapwin"><div class="row"><h2 class="grow" style="margin:0">Saisie de la pose dans SAP — EOTP ${i + 1} / ${n}</h2>
+        <button class="btn sm sec" data-dtnav="${i - 1}" ${i ? '' : 'disabled'}>◀</button><button class="btn sm sec" data-dtnav="${i + 1}" ${i < n - 1 ? '' : 'disabled'}>▶</button></div>
+      <p class="small muted">Comme la fenêtre « élément OTP », onglet « Descr. tech. ». <b>Encadré</b> : ce que vous saisissez. ${cap ? 'La colonne SAP vient de votre capture.' : 'Aucune capture de cet EOTP : rien à comparer.'}</p>
+      <div class="sapf"><span class="sapl">Elément d'OTP</span><span class="sapv">${esc(p.col)}</span><span class="small">${esc(el.designation || '')}</span></div>
+      <fieldset><legend>Données de mise en service</legend>
+        ${f('Code INSEE', p.insee || '', null, false)}
+        ${f('Date de clôture prév', 'à choisir', 'Date de clôture prév', true, 'ni le 1er ni le dernier jour du mois')}
+        ${f('Date MES réelle', sapDate(p.dateMES), 'Date MES réelle', true)}
+        ${f('Qté réelle (en serv)', sapNum0(p.qty, p.unit), 'Qté réelle (en serv)', true)}
+        ${f('Unité mes.', p.unit === 'm' ? 'M' : 'PCE', p.unit === 'm' ? 'Unité mes.' : null, false)}
+      </fieldset>
+      <fieldset><legend>Description Technique</legend>
+        ${f('Code Plan', p.cp || '', 'Code Plan', false)}
+        ${f('Code matière', mats.join(' / '), 'Code matière', false, 'carto')}
+        ${f('Diamètre', diams.map(d => (mats[0] === 'PE' ? 'PE' : '') + String(d).padStart(3, '0')).join(' / '), 'Diamètre', false, 'carto')}
+        ${f('Pression posée', press.join(' / '), 'Pression posée', false, 'carto')}
+      </fieldset>
+      <fieldset><legend>Gestion. Nature d'ouvrage</legend>
+        ${f('Nature d\'ouvrage', p.categorie, 'Nature d\'ouvrage', true)}
+      </fieldset></div>`;
+  }
+  const sapNum0 = (q, u) => fmt(q, u === 'm' ? 2 : 0);
+
   function dtRows(R) {
     if (!R.dt || !R.dt.captures.length) return [];
     return R.dt.rows.map(r => [r.eotp, r.champ, r.attendu, r.sap, r.ok === null ? (r.info || '') : r.ok ? 'conforme' : (r.info === 'information' ? 'différent de la carto (information)' : 'à vérifier')]);
@@ -613,8 +650,8 @@
     // pose : écran élément d'OTP, onglet Descr. tech. (un EOTP à la fois), dans l'ordre de la liste SAP
     const ordreSap = c => { const k = (cur().eotps || []).findIndex(e => e.code === String(c).split(' ')[0]); return k < 0 ? 999 : k; };
     const dtRef = p => { const mats = [...(p.dtMat || [])], diams = [...(p.dtDiam || [])].sort((x, y) => x - y); return { mat: mats.join(' / '), diam: diams.map(d => (mats[0] === 'PE' ? 'PE' : '') + String(d).padStart(3, '0')).join(' / '), press: [...(p.dtPress || [])].join(' / ') }; };
-    const sapPose = R.pose.filter(p => p.qty > 0).sort((x, y) => ordreSap(x.col) - ordreSap(y.col)).map(p => { const r = dtRef(p); return `<tr><td>${esc(p.col)}</td><td>${esc(p.insee || '')}</td><td><b>${esc(p.dateMES || '')}</b></td><td class="num"><b>${sapNum(p.qty, p.unit)}</b></td><td>${p.unit === 'm' ? 'M' : 'PCE'}</td><td class="muted small">ni le 1er ni le dernier jour du mois</td><td>${esc(p.cp || '')}</td><td>${esc(r.mat)}</td><td>${esc(r.diam)}</td><td>${esc(r.press)}</td><td>${esc(p.categorie)}</td></tr>`; }).join('');
-    const sapDep = R.sapDepose.map(s => `<tr><td>${esc(s.insee)}</td><td>${esc(s.commune)}</td><td>${esc(s.col)}</td><td>${esc(s.categorie)}</td><td class="wrap">${esc(s.designation)}</td><td>${esc(s.mat)}</td><td>${esc(s.IN)}</td><td>${esc(s.libMat)}</td><td>${esc(s.diamTxt)}</td><td class="num">${esc(s.annee)}</td><td class="num"><b>${sapNum(s.qty, s.unit)}</b></td><td>${s.unit === 'm' ? 'M' : 'PCE'}</td><td>${esc(s.date || '')}</td></tr>`).join('');
+    const sapPose = R.pose.filter(p => p.qty > 0).sort((x, y) => ordreSap(x.col) - ordreSap(y.col)).map(p => { const r = dtRef(p); return `<tr><td>${esc(p.col)}</td><td>${esc(p.insee || '')}</td><td><b>${esc(sapDate(p.dateMES))}</b></td><td class="num"><b>${sapNum(p.qty, p.unit)}</b></td><td>${p.unit === 'm' ? 'M' : 'PCE'}</td><td class="muted small">ni le 1er ni le dernier jour du mois</td><td>${esc(p.cp || '')}</td><td>${esc(r.mat)}</td><td>${esc(r.diam)}</td><td>${esc(r.press)}</td><td>${esc(p.categorie)}</td></tr>`; }).join('');
+    const sapDep = R.sapDepose.map(s => `<tr><td>${esc(s.insee)}</td><td>${esc(s.commune)}</td><td>${esc(s.col)}</td><td>${esc(s.categorie)}</td><td class="wrap">${esc(s.designation)}</td><td>${esc(s.mat)}</td><td>${esc(s.IN)}</td><td>${esc(s.libMat)}</td><td>${esc(s.diamTxt)}</td><td class="num">${esc(s.annee)}</td><td class="num"><b>${sapNum(s.qty, s.unit)}</b></td><td>${s.unit === 'm' ? 'M' : 'PCE'}</td><td>${esc(sapDate(s.date))}</td></tr>`).join('');
     return `<div class="verdict ${ok ? 'ok' : 'ko'}"><span class="grow">${ok ? '✔' : '✖'} ${esc(R.verdict)}</span>
         ${isForced(vk) ? `<span class="forced small">forcé (auto : ${esc(R.autoVerdict)})</span>` : ''}
         <button class="btn sm sec" data-force="${vk}">Forcer le verdict</button></div>
@@ -624,6 +661,7 @@
       <p class="small muted" style="margin:0 2px 10px">Répartition : chaque EOTP de renouvellement reçoit en dépose la quantité posée. Le surplus de dépose part en abandon sur le ou les biens que vous choisissez (colonne AB) ; une fois le surplus placé, le reste est réparti sur les EOTP de renouvellement (CP 22 puis CP 23, du plus ancien au plus récent) ; la pose en tranchée sans dépose en face part en CP 15. Mètres arrondis au-dessus. Toutes les cases sont modifiables ; ↺ revient à la proposition.</p>
       ${groups(R).map(g => renderMatrix(a, R, g)).join('')}
       ${renderAbManual(a, R)}
+      ${renderSaisieDt(cur(), R)}
       <div class="card"><h2>Valeurs à saisir dans SAP</h2>
         <p class="small muted">Pose : écran élément d'OTP (CJ02), onglet « Descr. tech. ». Dépose : écran ORC « Dépose des immobilisations », mêmes colonnes et même ordre ; supprimer les lignes proposées par SAP, puis créer une ligne par ligne ci-dessous.</p>
         <h3>Pose — écran élément d'OTP, onglet « Descr. tech. » (un EOTP à la fois, flèche « suivant »)</h3><p class="small muted">En gras : les valeurs à saisir. Date de clôture prév : à choisir, en évitant le 1er et le dernier jour du mois. Les autres colonnes, tirées de la carto, servent à vérifier l'écran.</p><div class="tw"><table><thead><tr><th>Elément d'OTP</th><th>Code INSEE</th><th>Date MES réelle</th><th class="num">Qté réelle (en serv)</th><th>Unité mes.</th><th>Date de clôture prév</th><th>Code Plan</th><th>Code matière</th><th>Diamètre</th><th>Pression posée</th><th>Nature d'ouvrage</th></tr></thead><tbody>${sapPose || '<tr><td colspan="11" class="muted">—</td></tr>'}</tbody></table></div>
@@ -769,6 +807,7 @@
     document.querySelectorAll('[data-orcdel]').forEach(b => b.onclick = () => { const [t, idx] = b.dataset.orcdel.split(':'); a.orc[t === 'e' ? 'eotpRows' : 'deposeRows'].splice(+idx, 1); touch(a); render(); });
     const oc = $('#orcClear'); if (oc) oc.onclick = () => confirmBox("Vider les données lues sur l'écran ORC ?", () => { a.orc = null; delete a.orcVerified; touch(a); render(); }, 'Vider');
     const ook = $('#orcOk'); if (ook) ook.onchange = () => { a.orcVerified = ook.checked; touch(a); render(); };
+    document.querySelectorAll('[data-dtnav]').forEach(b => b.onclick = () => { ui.dtIdx = +b.dataset.dtnav; render(); });
     const ddt = $('#dropDt'), idt = $('#inDt');
     if (ddt) { dropify(ddt, files => handleImages(files, 'dt')); idt.onchange = e => handleImages(e.target.files, 'dt'); }
     document.querySelectorAll('[data-dt]').forEach(i => i.onchange = () => {

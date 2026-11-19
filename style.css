@@ -130,3 +130,12 @@ table.rep th{white-space:normal;line-height:1.25;text-align:center}
 table.rep td.num input.n{width:70px}
 input.n.fin{background:var(--force-l);border-color:var(--force);color:var(--force);font-weight:700}
 table.rep tr.ft td{background:#f6f8fa;border-top:2px solid var(--line)}
+
+/* fenêtre « élément OTP » : quoi saisir */
+.sapwin fieldset{border:1px solid var(--line,#d5dbe3);border-radius:6px;margin:10px 0;padding:6px 12px}
+.sapwin legend{font-weight:600;font-size:13px;padding:0 6px}
+.sapf{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:4px 0}
+.sapl{min-width:170px;font-size:14px}
+.sapv{min-width:120px;padding:3px 8px;border:1px solid #c9d1db;border-radius:3px;background:#fff;font-family:ui-monospace,Consolas,monospace;font-size:14px}
+.sapv.saisir{border:2px solid #000;font-weight:700}
+.sapchk{font-size:13px;color:#555}.sapchk.ok{color:#2f6b10;font-weight:600}.sapchk.ko{color:#b3261e;font-weight:700}
