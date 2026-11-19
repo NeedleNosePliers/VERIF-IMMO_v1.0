@@ -83,6 +83,8 @@
     return p(d.getUTCDate()) + '/' + p(d.getUTCMonth() + 1) + '/' + d.getUTCFullYear();
   }
 
+  const dateKey = v => { const d = dateDisp(v); const m = String(d).match(/^(\d{2})\/(\d{2})\/(\d{4})$/); return m ? +(m[3] + m[2] + m[1]) : 0; };
+  const keyDisp = k => k ? String(k).replace(/^(\d{4})(\d{2})(\d{2})$/, '$3/$2/$1') : '';
   function classeIN(d) {
     if (d == null) return null;
     if (d < 80) return 'IN1';
@@ -421,6 +423,9 @@
       const p = poseMap[k] = poseMap[k] || { eotp: t.eotp, col: k, cp: t.cp, toCreate: t.toCreate, role, type: x.a.type, fam: fam(x.a.type), chantier: x.chantier, unit: unitOf(x.a.type), exact: 0, lines: [], brtPDR: false };
       p.exact += x.a.type === 'RES' ? (+x.a.longueur || 0) : 1;
       p.lines.push(x.uid); x.eotp = k;
+      // date de mise en service réelle : « Etat de service depuis » (à défaut « Date d'installation ») du tableau de pose
+      const dk = dateKey(x.src.etatDepuis) || dateKey(x.src.dateInst);
+      if (dk) { p.dateKeys = p.dateKeys || new Set(); p.dateKeys.add(dk); }
       if (x.a.brtPDR) p.brtPDR = true;
     }
     // pose forcée sur une colonne sans tronçon (ex. CP 15 : restructuration) et colonnes ajoutées par le CA
@@ -454,6 +459,9 @@
       const q = t === 'RES' ? (+x.a.longueur || 0) : 1;
       b.exact += q; if (x.a.tubage) b.exactTube += q;
       b.lines.push(x.uid); x.bien = key;
+      // date réelle de dépose / abandon : « Etat de service depuis » du tableau de dépose
+      const dk = dateKey(x.src.etatDepuis);
+      if (dk) { b.dateKeys = b.dateKeys || new Set(); b.dateKeys.add(dk); }
     }
     const biens = Object.values(bienMap).map(b => {
       b.exact = r2(b.exact); b.exactTube = r2(b.exactTube);
@@ -591,10 +599,19 @@
     if (pdr.length) add('info', `${pdr.length} PDR détecté(s) : ${pdr.map(p => p.pdr).join(', ')}.`);
 
     // 9. lignes à saisir dans SAP (format écran ORC)
+    // dates à saisir : la plus récente du tableau carto ; signalées si plusieurs
+    const allDep = new Set(); biens.forEach(b => (b.dateKeys || []).forEach(k => allDep.add(k)));
+    const allPose = new Set(); pose.forEach(p => (p.dateKeys || []).forEach(k => allPose.add(k)));
+    const latest = set => set && set.size ? keyDisp(Math.max(...set)) : '';
+    for (const p of pose) {
+      p.dateMES = latest(p.dateKeys) || latest(allPose);
+      if (p.dateKeys && p.dateKeys.size > 1) add('info', `${p.col} : plusieurs dates de mise en service dans la carto (${[...p.dateKeys].sort().map(keyDisp).join(', ')}) — la plus récente est proposée.`);
+    }
+    for (const b of biens) b.dateDep = latest(b.dateKeys) || latest(allDep) || latest(allPose);
     const sapDepose = [];
     for (const b of biens) for (const [col, q] of Object.entries(b.cells)) if (+q > 0) {
       const c = cols[col] || {};
-      sapDepose.push({ col, eotp: c.eotp, cp: c.cp, bien: b.key, label: b.label, type: b.type, mat: b.mat, IN: b.IN, annee: b.annee, qty: +q, unit: b.unit, categorie: categorie(c.cp, b.type), forced: !!forces['REP:' + b.key + '|' + col] });
+      sapDepose.push({ col, eotp: c.eotp, cp: c.cp, bien: b.key, label: b.label, type: b.type, mat: b.mat, IN: b.IN, annee: b.annee, date: b.dateDep, qty: +q, unit: b.unit, categorie: categorie(c.cp, b.type), forced: !!forces['REP:' + b.key + '|' + col] });
     }
 
     // 10. EOTP non utilisés (information)

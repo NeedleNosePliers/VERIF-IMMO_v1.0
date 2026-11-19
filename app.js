@@ -1,7 +1,7 @@
 /* VERIF-IMMO — interface. Tout est traité localement dans le navigateur. */
 (function () {
   'use strict';
-  const VERSION = '4.7';
+  const VERSION = '4.8';
   const APPNAME = 'VERIF-IMMO';
   const E = window.VIEngine;
   const STORE_KEY = 'verifimmo.v1';
@@ -505,8 +505,8 @@
         <td>${esc(p.categorie)}</td><td>${p.auto ? 'détecté dans SAP' : `ajouté à la main <button class="btn sm danger" data-pdr-del="${esc(p.id)}">✕</button>`}</td></tr>`;
     }).join('');
     // valeurs à saisir dans SAP (écran ORC)
-    const sapPose = R.pose.filter(p => p.qty > 0).map(p => `<tr><td>${esc(p.col)}</td><td><span class="pill ${CPCLS(p.cp)}">${esc(p.cp || '?')}</span></td><td>${esc(p.categorie)}</td><td class="num"><b>${fmtQ(p.qty, p.unit)}</b></td></tr>`).join('');
-    const sapDep = R.sapDepose.map(s => `<tr><td>${esc(s.col)}</td><td><span class="pill ${CPCLS(s.cp)}">${esc(s.cp || '?')}</span></td><td>${esc(s.label)}</td><td>${esc(s.mat)}</td><td>${esc(s.IN)}</td><td>${esc(s.annee)}</td><td>${esc(s.categorie)}</td><td class="num"><b>${fmtQ(s.qty, s.unit)}</b></td></tr>`).join('');
+    const sapPose = R.pose.filter(p => p.qty > 0).map(p => `<tr><td>${esc(p.col)}</td><td><span class="pill ${CPCLS(p.cp)}">${esc(p.cp || '?')}</span></td><td>${esc(p.categorie)}</td><td class="num"><b>${fmtQ(p.qty, p.unit)}</b></td><td>${esc(p.dateMES || '—')}</td></tr>`).join('');
+    const sapDep = R.sapDepose.map(s => `<tr><td>${esc(s.col)}</td><td><span class="pill ${CPCLS(s.cp)}">${esc(s.cp || '?')}</span></td><td>${esc(s.label)}</td><td>${esc(s.mat)}</td><td>${esc(s.IN)}</td><td>${esc(s.annee)}</td><td>${esc(s.categorie)}</td><td class="num"><b>${fmtQ(s.qty, s.unit)}</b></td><td>${esc(s.date || '—')}</td></tr>`).join('');
     return `<div class="verdict ${ok ? 'ok' : 'ko'}"><span class="grow">${ok ? '✔' : '✖'} ${esc(R.verdict)}</span>
         ${isForced(vk) ? `<span class="forced small">forcé (auto : ${esc(R.autoVerdict)})</span>` : ''}
         <button class="btn sm sec" data-force="${vk}">Forcer le verdict</button></div>
@@ -517,8 +517,8 @@
       ${groups(R).map(g => renderMatrix(a, R, g)).join('')}
       ${renderAbManual(a, R)}
       <div class="card"><h2>Valeurs à saisir dans SAP (écran ORC)</h2>
-        <h3>Description technique des EOTP — quantité réelle</h3><div class="tw"><table><thead><tr><th>EOTP</th><th>CP</th><th>Nat. ouvr.</th><th class="num">Quantité réelle</th></tr></thead><tbody>${sapPose || '<tr><td colspan="4" class="muted">—</td></tr>'}</tbody></table></div>
-        <h3>Dépose — quantité réelle dép/ab</h3><div class="tw"><table><thead><tr><th>EOTP</th><th>CP</th><th>Bien</th><th>Mat.</th><th>IN</th><th>Année</th><th>Nat. ouvr.</th><th class="num">Quantité</th></tr></thead><tbody>${sapDep || '<tr><td colspan="8" class="muted">—</td></tr>'}</tbody></table></div></div>
+        <h3>Description technique des EOTP — quantité réelle</h3><div class="tw"><table><thead><tr><th>EOTP</th><th>CP</th><th>Nat. ouvr.</th><th class="num">Quantité réelle</th><th>Date MES réelle</th></tr></thead><tbody>${sapPose || '<tr><td colspan="5" class="muted">—</td></tr>'}</tbody></table></div>
+        <h3>Dépose — quantité réelle dép/ab</h3><div class="tw"><table><thead><tr><th>EOTP</th><th>CP</th><th>Bien</th><th>Mat.</th><th>IN</th><th>Année</th><th>Nat. ouvr.</th><th class="num">Quantité</th><th>Date réelle dép/ab</th></tr></thead><tbody>${sapDep || '<tr><td colspan="9" class="muted">—</td></tr>'}</tbody></table></div></div>
       ${renderOrcCompare(R)}
       <div class="card"><div class="row"><h2 class="grow" style="margin:0">PDR</h2><button class="btn sm sec" id="pdrAdd">+ Ajouter un PDR</button></div>
         ${R.pdr.length ? `<div class="tw"><table><thead><tr><th>PDR</th><th>EOTP</th><th>Nature</th><th>Catégorie</th><th>Origine</th></tr></thead><tbody>${pdrRows}</tbody></table></div>` : '<p class="muted">Aucun PDR.</p>'}</div>`;
@@ -794,9 +794,9 @@
       ['Verdict', R.verdict + (a.forces.VERDICT ? ' (forcé, auto : ' + R.autoVerdict + ')' : '')], [], ['Niveau', 'Contrôle'], ...R.controls.map(c => [c.level, c.msg])], [18, 120]);
     add('Bilan', [['', 'Total pose', 'Total dépose', 'Différence (dépose − pose)', 'Unité', 'Lecture'], ...bilan(R).map(x => [x.label, x.pose, x.dep, x.diff, x.unit === 'm' ? 'm' : 'nb', sensDiff(x)])], [30, 12, 12, 24, 6, 60]);
     add('Répartition', matrixAoa(R), [30, 10, 11, 26, 26, 26, 26, 26, 10]);
-    add('Saisie SAP (ORC)', [['Tableau', 'EOTP', 'CP', 'Bien', 'Mat.', 'IN', 'Année', 'Nat. ouvr.', 'Quantité réelle', 'Unité'],
-      ...R.pose.filter(p => p.qty > 0).map(p => ['Description technique des EOTP', p.col, p.cp, '', '', '', '', p.categorie, p.qty, p.unit === 'm' ? 'M' : 'PCE']),
-      ...R.sapDepose.map(s => ['Dépose', s.col, s.cp, s.label, s.mat, s.IN, s.annee, s.categorie, s.qty, s.unit === 'm' ? 'M' : 'PCE'])], [30, 28, 5, 26, 6, 6, 7, 10, 14, 6]);
+    add('Saisie SAP (ORC)', [['Tableau', 'EOTP', 'CP', 'Bien', 'Mat.', 'IN', 'Année', 'Nat. ouvr.', 'Quantité réelle', 'Unité', 'Date (MES / dép-ab)'],
+      ...R.pose.filter(p => p.qty > 0).map(p => ['Description technique des EOTP', p.col, p.cp, '', '', '', '', p.categorie, p.qty, p.unit === 'm' ? 'M' : 'PCE', p.dateMES || '']),
+      ...R.sapDepose.map(s => ['Dépose', s.col, s.cp, s.label, s.mat, s.IN, s.annee, s.categorie, s.qty, s.unit === 'm' ? 'M' : 'PCE', s.date || ''])], [30, 28, 5, 26, 6, 6, 7, 10, 14, 6, 16]);
     add('PDR', [['PDR', 'EOTP', 'Nature', 'Catégorie', 'Origine'], ...R.pdr.map(p => [p.pdr, p.eotp, p.nature, p.categorie, p.auto ? 'détecté SAP' : 'manuel'])], [18, 28, 10, 10, 12]);
     add('Tronçons pose', [LINE_HDR, ...lineRows(R, 'pose')], [6, 12, 26, 12, 8, 7, 5, 6, 10, 9, 7, 30, 7]);
     add('Tronçons dépose', [LINE_HDR, ...lineRows(R, 'depose')], [6, 12, 26, 12, 8, 7, 5, 6, 10, 9, 7, 30, 7]);
@@ -858,8 +858,8 @@
         g.biens.map(b => [b.label, b.virtuel ? '—' : fmt(b.exact), fmt(b.cap), ...g.cols.map(c => fmt(b.cells[c.col] || 0)), fmt(b.reste)])
           .concat([['Dépose par EOTP', '', '', ...g.cols.map(c => fmt(tot(c).depose)), ''], ['Pose par EOTP', '', '', ...g.cols.map(c => c.cp === 'AB' ? '—' : fmt(tot(c).pose)), '']]));
     }
-    tbl('Valeurs à saisir dans SAP — Description technique des EOTP', ['EOTP', 'CP', 'Nat. ouvr.', 'Quantité réelle'], R.pose.filter(p => p.qty > 0).map(p => [p.col, p.cp || '', p.categorie, fmtQ(p.qty, p.unit)]));
-    tbl('Valeurs à saisir dans SAP — Dépose', ['EOTP', 'CP', 'Bien', 'Mat.', 'IN', 'Année', 'Nat. ouvr.', 'Quantité réelle'], R.sapDepose.map(s => [s.col, s.cp || '', s.label, s.mat, s.IN, s.annee, s.categorie, fmtQ(s.qty, s.unit)]));
+    tbl('Valeurs à saisir dans SAP — Description technique des EOTP', ['EOTP', 'CP', 'Nat. ouvr.', 'Quantité réelle', 'Date MES réelle'], R.pose.filter(p => p.qty > 0).map(p => [p.col, p.cp || '', p.categorie, fmtQ(p.qty, p.unit), p.dateMES || '']));
+    tbl('Valeurs à saisir dans SAP — Dépose', ['EOTP', 'CP', 'Bien', 'Mat.', 'IN', 'Année', 'Nat. ouvr.', 'Quantité réelle', 'Date réelle dép/ab'], R.sapDepose.map(s => [s.col, s.cp || '', s.label, s.mat, s.IN, s.annee, s.categorie, fmtQ(s.qty, s.unit), s.date || '']));
     if (R.orc) tbl("Comparaison avec l'écran ORC", ['Tableau', 'EOTP', 'Désignation', 'Mat.', 'IN', 'Année', 'Qté prév.', 'Qté réelle SAP', 'Proposition', 'Statut'],
       R.orc.pose.map(x => ['Pose', x.eotp, x.nat || '', '', '', '', x.prev ?? '—', x.reel ?? '—', x.app, statut(x)])
         .concat(R.orc.depose.map(x => ['Dépose', x.eotp, x.designation || '', x.mat || '', x.IN || '', x.annee || '', x.prev ?? '—', x.reel ?? '—', x.app, statut(x)])));
