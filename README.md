@@ -23,6 +23,10 @@ Tout est traité **dans le navigateur** : aucun fichier ni capture n'est envoyé
 | `vendor/` | bibliothèques embarquées : SheetJS (Excel), jsPDF + AutoTable (PDF), Tesseract.js + données « fra » (OCR) |
 
 ## Version
+Numérotation X.Y (règle en vigueur après la 4.11) :
+- **X** (premier chiffre) : changement d'une règle de calcul ou de répartition — les mêmes fichiers peuvent donner un résultat différent. La version suivante passe à X+1.0.
+- **Y** (second chiffre) : affichage, textes, export ou correction sans effet sur les résultats. La version suivante passe à X.Y+1.
+
 Le numéro de version est à changer **aux trois endroits** à chaque modification : `const VERSION` dans `app.js`, `const VERSION` dans `sw.js` (fonctionnement hors ligne) et les `?v=` dans `index.html`.
 
 ## Règles appliquées
