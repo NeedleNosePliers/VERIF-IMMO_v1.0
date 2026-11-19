@@ -787,7 +787,7 @@
       if (d.codeMat && mats.length) push('Code matière', mats.join(' / '), d.codeMat, mats.includes(d.codeMat), 'information');
       if (d.diametre && diams.length) { const n = +(d.diametre.match(/\d+/) || [0])[0]; push('Diamètre', diams.map(x => (mats[0] === 'PE' ? 'PE' : '') + String(x).padStart(3, '0')).join(' / '), d.diametre, diams.includes(n), 'information'); }
       if (d.pression && press.length) push('Pression posée', press.join(' / '), d.pression, press.includes(d.pression), 'information');
-      if (d.nat && p.categorie) push('Nature d\'ouvrage', p.categorie, d.nat, d.nat === p.categorie, 'information');
+      if (p.categorie) { if (d.nat) push('Nature d\'ouvrage', p.categorie, d.nat, p.categorie.split(' / ').includes(d.nat)); else out.rows.push({ eotp: p.eotp, champ: 'Nature d\'ouvrage', attendu: p.categorie, sap: '—', ok: null, info: 'non lue sur la capture (la saisir dans la capture 3)' }); }
     }
     return out;
   }
@@ -841,7 +841,7 @@
     };
     const chOf = code => (parseEotpCode(code) || {}).chantier || '';
     const rows = (orc.deposeRows || []).map(d => ({ ...d, fam: famOfRow(d), ch: chOf(d.eotp), cp: (parseEotpCode(d.eotp) || {}).cp || null }));
-    const C = out.controle = { biens: [], equilibre: [], abandon: [], dates: [] };
+    const C = out.controle = { biens: [], equilibre: [], abandon: [], dates: [], nat: [] };
     if (rows.length) {
       // 1. chaque bien de la carto : total saisi dans SAP (toutes EOTP confondues) = quantité carto
       const bienKeyOf = d => d.fam === 'RES' ? `${d.ch}|RES|${d.mat}|${d.IN}|${d.annee}` : `${d.ch}|${d.fam}`;
@@ -876,6 +876,14 @@
         const sap = rows.filter(d => d.ch === ch && d.fam === fam && d.cp === 'AB').reduce((x, d) => x + (d.reel || 0), 0);
         C.abandon.push({ fam, label: TYPE_LABEL[fam], unit: fam === 'RES' ? 'm' : 'u', depose: carto, pose: posee, man, attendu, sap, ok: Math.abs(attendu - sap) < EPS });
       }
+      // 3 bis. nature d'ouvrage saisie par le CA sur chaque ligne de dépose
+      C.nat = [];
+      for (const d of rows) {
+        if (d.fam === '?' || !d.cp) continue;
+        const att = categorie(d.cp, d.fam);
+        if (!att || att === '—' || att === '?') continue;
+        if (!att.split(' / ').includes(d.nat || '')) C.nat.push({ eotp: d.eotp, label: d.fam === 'RES' ? `${d.mat} ${d.IN} ${d.annee}` : (TYPE_LABEL[d.fam] || d.fam), sap: d.nat || '—', attendu: att });
+      }
       // 4. dates de dépose : la plus récente « Etat de service depuis » de la carto
       const dateCarto = {}; for (const b of R.biens) if (b.dateDep) dateCarto[b.key] = b.dateDep;
       const norm8 = t => String(t || '').replace(/\./g, '/');
@@ -885,7 +893,7 @@
         if (att && norm8(d.date) !== att) C.dates.push({ eotp: d.eotp, label: d.fam === 'RES' ? `${d.mat} ${d.IN} ${d.annee}` : TYPE_LABEL[d.fam], sap: norm8(d.date), attendu: att });
       }
     }
-    out.nbControle = C.biens.filter(x => !x.ok).length + C.equilibre.filter(x => !x.ok).length + C.abandon.filter(x => !x.ok).length + C.dates.length + out.pose.filter(x => !x.ok).length;
+    out.nbControle = C.biens.filter(x => !x.ok).length + C.equilibre.filter(x => !x.ok).length + C.abandon.filter(x => !x.ok).length + C.dates.length + C.nat.length + out.pose.filter(x => !x.ok).length;
     out.nbEcarts = out.pose.filter(x => !x.ok).length + out.depose.filter(x => !x.ok).length;
     return out;
   }

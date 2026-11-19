@@ -1,7 +1,7 @@
 /* VERIF-IMMO — interface. Tout est traité localement dans le navigateur. */
 (function () {
   'use strict';
-  const VERSION = '5.1';
+  const VERSION = '5.2';
   const APPNAME = 'VERIF-IMMO';
   const E = window.VIEngine;
   const STORE_KEY = 'verifimmo.v1';
@@ -350,14 +350,14 @@
     const rows = dts.map((d, i) => {
       const c = caps.find(x => x.id === d.id) || {};
       const sel = `<select data-dt="${i}:eotpChoisi"><option value="">${esc(c.eotpRetenu ? c.eotpRetenu + (c.sure ? '' : ' (à vérifier)') : 'EOTP non reconnu')}</option>${poseE.map(e => `<option value="${esc(e)}" ${d.eotpChoisi === e ? 'selected' : ''}>${esc(e)}</option>`).join('')}</select>`;
-      return `<tr><td>${sel}<div class="small muted">lu : ${esc(d.eotpRaw || '—')}</div></td><td>${inp(i, 'qte', d.qte == null ? '' : fmt(d.qte))}</td><td>${inp(i, 'unite', d.unite, 40)}</td><td>${inp(i, 'dateMes', d.dateMes, 95)}</td><td>${inp(i, 'dateCloture', d.dateCloture, 95)}</td><td>${inp(i, 'codePlan', d.codePlan, 40)}</td><td>${inp(i, 'codeMat', d.codeMat, 40)}</td><td>${inp(i, 'diametre', d.diametre, 60)}</td><td>${inp(i, 'pression', d.pression, 50)}</td><td><button class="btn sm danger" data-dtdel="${i}">✕</button></td></tr>`;
+      return `<tr><td>${sel}<div class="small muted">lu : ${esc(d.eotpRaw || '—')}</div></td><td>${inp(i, 'qte', d.qte == null ? '' : fmt(d.qte))}</td><td>${inp(i, 'unite', d.unite, 40)}</td><td>${inp(i, 'dateMes', d.dateMes, 95)}</td><td>${inp(i, 'dateCloture', d.dateCloture, 95)}</td><td>${inp(i, 'codePlan', d.codePlan, 40)}</td><td>${inp(i, 'codeMat', d.codeMat, 40)}</td><td>${inp(i, 'diametre', d.diametre, 60)}</td><td>${inp(i, 'pression', d.pression, 50)}</td><td>${inp(i, 'nat', d.nat, 55)}</td><td><button class="btn sm danger" data-dtdel="${i}">✕</button></td></tr>`;
     }).join('');
     return `<div class="card"><div class="row"><h2 class="grow" style="margin:0">Capture 3 — Écran élément d'OTP, onglet « Descr. tech. » (pose) <span class="small muted">(au choix)</span></h2>
         ${dts.length ? '<button class="btn sm danger" id="dtClear">Vider</button>' : ''}</div>
       <p class="small muted">Une capture par EOTP de pose, après saisie. L'appli contrôle la saisie face à la carto (onglet Répartition).</p>
       <label class="drop" id="dropDt" data-paste="dt"><b>Déposer / coller les captures « Descr. tech. » ici</b><br><span class="small">ou cliquer pour choisir</span>
         <input type="file" id="inDt" accept="image/*" multiple hidden></label>
-      ${dts.length ? `<div class="tw"><table><thead><tr><th>Élément d'OTP</th><th>Qté réelle (en serv)</th><th>Unité mes.</th><th>Date MES réelle</th><th>Date de clôture prév</th><th>Code Plan</th><th>Code matière</th><th>Diamètre</th><th>Pression posée</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+      ${dts.length ? `<div class="tw"><table><thead><tr><th>Élément d'OTP</th><th>Qté réelle (en serv)</th><th>Unité mes.</th><th>Date MES réelle</th><th>Date de clôture prév</th><th>Code Plan</th><th>Code matière</th><th>Diamètre</th><th>Pression posée</th><th>Nature d'ouvrage</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
       <label class="row" style="margin-top:12px;font-weight:600;cursor:pointer"><input type="checkbox" id="dtOk" ${a.dtVerified ? 'checked' : ''} style="width:20px;height:20px"> Écrans Descr. tech. vérifiés par rapport à SAP</label>` : ''}</div>`;
   }
 
@@ -387,6 +387,7 @@
     for (const x of C.biens) out.push(['Bien déposé : total saisi', x.label, q(x.attendu, x.unit), q(x.sap, x.unit), x.horsCarto ? 'absent de la carto' : st(x.ok)]);
     for (const x of C.equilibre) out.push(['EOTP de renouvellement : dépose = pose', x.eotp, `pose ${q(x.pose, x.unit)} (${x.src})`, `dépose ${q(x.dep, x.unit)}`, st(x.ok)]);
     for (const x of C.abandon) out.push(['Abandon (AB) = surplus', x.label, `${q(x.attendu, x.unit)} (${x.depose > x.pose ? `dépose ${q(x.depose, x.unit)} − pose ${q(x.pose, x.unit)}` : 'pas de surplus dans la carto'}${x.man ? ' + ' + x.man + ' hors carto' : ''})`, q(x.sap, x.unit), st(x.ok)]);
+    for (const x of C.nat || []) out.push(['Nature d\'ouvrage (Nat. Ouvr)', `${x.eotp} — ${x.label}`, x.attendu, x.sap, 'à vérifier']);
     for (const x of C.dates) out.push(['Date réelle dép/ab', `${x.eotp} — ${x.label}`, x.attendu, x.sap, 'à vérifier']);
     return out;
   }
@@ -396,9 +397,9 @@
   }
   function renderDtCheck(R) {
     const rows = dtRows(R); if (!rows.length) return '';
-    const pill = t => t === 'conforme' ? `<span class="pill" style="background:var(--green-l);color:#2f6b10">${t}</span>` : t === 'pas de capture' ? `<span class="pill none">${t}</span>` : `<span class="pill" style="background:var(--orange-l);color:var(--orange)">${esc(t)}</span>`;
+    const pill = t => t === 'conforme' ? `<span class="pill" style="background:var(--green-l);color:#2f6b10">${t}</span>` : (t === 'pas de capture' || /^non lue/.test(t)) ? `<span class="pill none">${esc(t)}</span>` : `<span class="pill" style="background:var(--orange-l);color:var(--orange)">${esc(t)}</span>`;
     return `<div class="card"><h2>Contrôle de la saisie SAP — pose (écrans Descr. tech.)</h2>
-      <p class="small muted">Valeurs lues sur les captures, face à la carto. Code matière, diamètre, pression et nature d'ouvrage : pour information (données de l'EOTP, pas forcément saisies par le CA). Date de clôture prév : règle du pas-à-pas (Document1) « éviter 1er du mois et fin de mois ».</p>
+      <p class="small muted">Valeurs lues sur les captures, face à la carto. Code matière, diamètre et pression : pour information (données de l'EOTP, pas forcément saisies par le CA). Date de clôture prév : règle du pas-à-pas (Document1) « éviter 1er du mois et fin de mois ».</p>
       <div class="tw"><table><thead><tr><th>Elément d'OTP</th><th>Champ</th><th>Attendu (carto)</th><th>Saisi dans SAP</th><th>Statut</th></tr></thead><tbody>${rows.map(r => `<tr><td>${esc(r[0])}</td><td>${esc(r[1])}</td><td>${esc(r[2])}</td><td><b>${esc(r[3])}</b></td><td>${pill(r[4])}</td></tr>`).join('')}</tbody></table></div></div>`;
   }
   function renderOrcCompare(R) {
