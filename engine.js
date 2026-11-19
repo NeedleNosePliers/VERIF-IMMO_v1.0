@@ -31,7 +31,9 @@
 
   // Catégories d'immo par code plan (tableau fourni par le CA + doc p.27 pour 17 à 21)
   function categorie(cp, type, brtPDR) {
-    if (!cp || cp === 'AB') return '—';
+    if (!cp) return '—';
+    // abandon : nature d'ouvrage du bien abandonné (comme l'écran ORC)
+    if (cp === 'AB') return ({ RES: 'M10E', BI: 'P21E', BC: 'P23E', CI: 'P25E', CM: 'P24E', PDR: 'S31E' })[type] || '—';
     if (cp === '22' || cp === '15') {
       if (type === 'PDR') return 'S31E';
       if (brtPDR) return 'P21E';
@@ -85,11 +87,26 @@
 
   const dateKey = v => { const d = dateDisp(v); const m = String(d).match(/^(\d{2})\/(\d{2})\/(\d{4})$/); return m ? +(m[3] + m[2] + m[1]) : 0; };
   const keyDisp = k => k ? String(k).replace(/^(\d{4})(\d{2})(\d{2})$/, '$3/$2/$1') : '';
-  function classeIN(d) {
+  // classes de diamètre telles que l'écran ORC les affiche : PE « < 100 » / « >= 100 et < 200 » ; autres matières « < 80 » / « >= 80 et < 200 »
+  function classeIN(d, mat) {
     if (d == null) return null;
-    if (d < 80) return 'IN1';
+    const s1 = mat === 'PE' || mat === '(PE)' ? 100 : 80;
+    if (d < s1) return 'IN1';
     if (d < 200) return 'IN2';
     return 'IN3';
+  }
+  const LIB_MAT = { A: 'AUTRES', PE: 'POLYETHYLENE', AC: 'ACIER' };
+  function diamTxt(mat, IN) {
+    const s1 = mat === 'PE' ? 100 : 80;
+    return IN === 'IN1' ? `< ${s1}` : IN === 'IN2' ? `>= ${s1} et < 200` : IN === 'IN3' ? '>= 200' : '';
+  }
+  // INSEE SAP : la commune (Marseille, Lyon, Paris), pas l'arrondissement de la carto
+  function inseeSAP(c) {
+    const n = +c;
+    if (n >= 13201 && n <= 13216) return '13055';
+    if (n >= 69381 && n <= 69389) return '69123';
+    if (n >= 75101 && n <= 75120) return '75056';
+    return String(c || '');
   }
 
   // ---------- Lecture des fichiers carto (G Canalisation) ----------
@@ -151,6 +168,7 @@
         lSig: num(get(r, 'lSig')),
         voie: String(get(r, 'voie') ?? ''),
         insee: String(get(r, 'insee') ?? ''),
+        commune: String(get(r, 'commune') ?? ''),
         eotpDepose: String(get(r, 'eotpDepose') ?? '').trim(),
         eotpPose: String(get(r, 'eotpPose') ?? '').trim(),
         posteTech: String(get(r, 'posteTech') ?? ''),
@@ -207,7 +225,7 @@
     return {
       type,
       matiere: matiereSAP(l.materiau),
-      IN: classeIN(l.diam),
+      IN: classeIN(l.diam, matiereSAP(l.materiau)),
       annee: kind === 'pose' ? (yearOf(l.etatDepuis) ?? yearOf(l.dateInst)) : yearOf(l.dateInst),
       longueur: l.lInst == null ? 0 : l.lInst,
       tubage,
@@ -423,6 +441,7 @@
       const p = poseMap[k] = poseMap[k] || { eotp: t.eotp, col: k, cp: t.cp, toCreate: t.toCreate, role, type: x.a.type, fam: fam(x.a.type), chantier: x.chantier, unit: unitOf(x.a.type), exact: 0, lines: [], brtPDR: false };
       p.exact += x.a.type === 'RES' ? (+x.a.longueur || 0) : 1;
       p.lines.push(x.uid); x.eotp = k;
+      p.insee = p.insee || inseeSAP(x.src.insee); p.commune = p.commune || String(x.src.commune || '').replace(/\s+\d+.*$/, '').toUpperCase();
       // date de mise en service réelle : « Etat de service depuis » (à défaut « Date d'installation ») du tableau de pose
       const dk = dateKey(x.src.etatDepuis) || dateKey(x.src.dateInst);
       if (dk) { p.dateKeys = p.dateKeys || new Set(); p.dateKeys.add(dk); }
@@ -455,7 +474,7 @@
       const t = x.a.type, mat = MAT_SAP[x.a.matiere] || x.a.matiere;
       const key = t === 'RES' ? `${x.chantier}|RES|${mat}|${x.a.IN || '?'}|${x.a.annee || '?'}` : `${x.chantier}|${t}`;
       const b = bienMap[key] = bienMap[key] || { key, chantier: x.chantier, type: t, fam: fam(t), mat: t === 'RES' ? mat : '', IN: t === 'RES' ? x.a.IN : '', annee: t === 'RES' ? x.a.annee : '',
-        insee: x.src.insee, unit: unitOf(t), exact: 0, exactTube: 0, lines: [] };
+        insee: inseeSAP(x.src.insee), commune: String(x.src.commune || '').replace(/\s+\d+.*$/, '').toUpperCase(), unit: unitOf(t), exact: 0, exactTube: 0, lines: [] };
       const q = t === 'RES' ? (+x.a.longueur || 0) : 1;
       b.exact += q; if (x.a.tubage) b.exactTube += q;
       b.lines.push(x.uid); x.bien = key;
@@ -611,7 +630,9 @@
     const sapDepose = [];
     for (const b of biens) for (const [col, q] of Object.entries(b.cells)) if (+q > 0) {
       const c = cols[col] || {};
-      sapDepose.push({ col, eotp: c.eotp, cp: c.cp, bien: b.key, label: b.label, type: b.type, mat: b.mat, IN: b.IN, annee: b.annee, date: b.dateDep, qty: +q, unit: b.unit, categorie: categorie(c.cp, b.type), forced: !!forces['REP:' + b.key + '|' + col] });
+      const el = elements.find(e => e.code === c.eotp);
+      sapDepose.push({ col, eotp: c.eotp, cp: c.cp, bien: b.key, label: b.label, type: b.type, mat: b.mat, IN: b.IN, annee: b.annee, date: b.dateDep, qty: +q,
+        insee: b.insee || (pose[0] && pose[0].insee) || '', commune: b.commune || (pose[0] && pose[0].commune) || '', designation: el ? el.designation : '', libMat: LIB_MAT[b.mat] || '', diamTxt: b.type === 'RES' ? diamTxt(b.mat, b.IN) : '', unit: b.unit, categorie: categorie(c.cp, b.type), forced: !!forces['REP:' + b.key + '|' + col] });
     }
 
     // 10. EOTP non utilisés (information)
@@ -720,6 +741,6 @@
     return out;
   }
 
-  const api = { compute, MAT_SAP, parseOrcText, compareOrc, parseCarto, parseOcrText, fixEotp, parseEotpCode, classeIN, categorie, autoAttrs, typeOf, TYPE_LABEL, RENEW_CP, yearOf, norm, dateDisp };
+  const api = { compute, MAT_SAP, inseeSAP, diamTxt, LIB_MAT, parseOrcText, compareOrc, parseCarto, parseOcrText, fixEotp, parseEotpCode, classeIN, categorie, autoAttrs, typeOf, TYPE_LABEL, RENEW_CP, yearOf, norm, dateDisp };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.VIEngine = api;
 })(typeof window !== 'undefined' ? window : globalThis);

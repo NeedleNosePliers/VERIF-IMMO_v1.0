@@ -1,7 +1,7 @@
 /* VERIF-IMMO — interface. Tout est traité localement dans le navigateur. */
 (function () {
   'use strict';
-  const VERSION = '4.8';
+  const VERSION = '4.9';
   const APPNAME = 'VERIF-IMMO';
   const E = window.VIEngine;
   const STORE_KEY = 'verifimmo.v1';
@@ -460,19 +460,30 @@
 </tfoot></table></div></div>`;
   }
 
+  // cadre SAP « Ecart quantités posées / quantités déposées » : pose − dépose, négatif écrit « 24- »
+  const sapSigned = n => n < 0 ? `${fmt(-n)}-` : fmt(n);
+  function renderEcartSAP(R) {
+    const tot = {};
+    for (const x of bilan(R)) { const k = x.unit === 'm' ? 'M' : 'P'; tot[k] = tot[k] || { pose: 0, dep: 0 }; tot[k].pose += x.pose; tot[k].dep += x.dep; }
+    const ch = R.chantiers[0] || '';
+    const insee = (R.pose[0] || {}).insee || '';
+    const rows = Object.entries(tot).map(([k, t]) => `<tr><td>${esc(ch)}</td><td>${k}</td><td>${esc(insee)}</td><td class="num"><b>${sapSigned(t.pose - t.dep)}</b></td><td>${k === 'M' ? 'M' : 'PCE'}</td></tr>`).join('');
+    return rows ? `<h3>Ecart quantités posées / quantités déposées</h3><div class="tw" style="max-width:640px"><table><thead><tr><th>Chantier</th><th>F</th><th>INSEE</th><th class="num">Ecart pose / dépose</th><th>Un.</th></tr></thead><tbody>${rows}</tbody></table></div>` : '';
+  }
+
   // bilan : total pose, total dépose, différence (par famille)
   function bilan(R) {
     return groups(R).map(g => {
       const pose = g.pose.reduce((t, p) => t + (+p.qty || 0), 0);
       const dep = g.biens.reduce((t, b) => t + (+b.cap || 0), 0);
-      return { label: FAM_LABEL[g.fam] + (R.chantiers.length > 1 ? ' — ' + g.ch : ''), unit: g.fam === 'RES' ? 'm' : 'u', pose, dep, diff: dep - pose };
+      return { label: FAM_LABEL[g.fam] + (R.chantiers.length > 1 ? ' — ' + g.ch : ''), unit: g.fam === 'RES' ? 'm' : 'u', pose, dep, diff: dep - pose, ecart: pose - dep };
     });
   }
   const sensDiff = x => x.diff > 0 ? `${fmtQ(x.diff, x.unit)} de dépose en plus → abandon` : x.diff < 0 ? `${fmtQ(-x.diff, x.unit)} de pose en plus → pose sans dépose (CP 15 pour le réseau)` : 'équilibré';
   function renderBilan(R) {
     const rows = bilan(R).map(x => `<tr><td><b>${esc(x.label)}</b></td><td class="num">${fmtQ(x.pose, x.unit)}</td><td class="num">${fmtQ(x.dep, x.unit)}</td>
-      <td class="num"><b>${x.diff > 0 ? '+' : ''}${fmtQ(x.diff, x.unit)}</b></td><td>${esc(sensDiff(x))}</td></tr>`).join('');
-    return rows ? `<div class="card"><h2>Bilan pose / dépose</h2><div class="tw"><table><thead><tr><th></th><th class="num">Total pose</th><th class="num">Total dépose</th><th class="num">Différence (dépose − pose)</th><th>Lecture</th></tr></thead><tbody>${rows}</tbody></table></div></div>` : '';
+      <td class="num"><b>${sapSigned(x.ecart)}${x.unit === 'm' ? ' M' : ' PCE'}</b></td><td>${esc(sensDiff(x))}</td></tr>`).join('');
+    return rows ? `<div class="card"><h2>Bilan pose / dépose</h2><div class="tw"><table><thead><tr><th></th><th class="num">Total pose</th><th class="num">Total dépose</th><th class="num">Ecart pose / dépose</th><th>Lecture</th></tr></thead><tbody>${rows}</tbody></table></div></div>` : '';
   }
 
   // branchements / CI / CM abandonnés absents de la carto : saisis par le CA
@@ -505,8 +516,10 @@
         <td>${esc(p.categorie)}</td><td>${p.auto ? 'détecté dans SAP' : `ajouté à la main <button class="btn sm danger" data-pdr-del="${esc(p.id)}">✕</button>`}</td></tr>`;
     }).join('');
     // valeurs à saisir dans SAP (écran ORC)
-    const sapPose = R.pose.filter(p => p.qty > 0).map(p => `<tr><td>${esc(p.col)}</td><td><span class="pill ${CPCLS(p.cp)}">${esc(p.cp || '?')}</span></td><td>${esc(p.categorie)}</td><td class="num"><b>${fmtQ(p.qty, p.unit)}</b></td><td>${esc(p.dateMES || '—')}</td></tr>`).join('');
-    const sapDep = R.sapDepose.map(s => `<tr><td>${esc(s.col)}</td><td><span class="pill ${CPCLS(s.cp)}">${esc(s.cp || '?')}</span></td><td>${esc(s.label)}</td><td>${esc(s.mat)}</td><td>${esc(s.IN)}</td><td>${esc(s.annee)}</td><td>${esc(s.categorie)}</td><td class="num"><b>${fmtQ(s.qty, s.unit)}</b></td><td>${esc(s.date || '—')}</td></tr>`).join('');
+    // valeurs à saisir, dans la disposition de l'écran ORC
+    const sapNum = (q, u) => fmt(q, u === 'm' ? 2 : 0);
+    const sapPose = R.pose.filter(p => p.qty > 0).map(p => `<tr><td>${esc(p.col)}</td><td>${esc(p.insee || '')}</td><td class="num"><b>${sapNum(p.qty, p.unit)}</b></td><td>${p.unit === 'm' ? 'M' : 'PCE'}</td><td>${esc(p.categorie)}</td><td>${esc(p.dateMES || '')}</td></tr>`).join('');
+    const sapDep = R.sapDepose.map(s => `<tr><td>${esc(s.insee)}</td><td>${esc(s.commune)}</td><td>${esc(s.col)}</td><td>${esc(s.categorie)}</td><td class="wrap">${esc(s.designation)}</td><td>${esc(s.mat)}</td><td>${esc(s.IN)}</td><td>${esc(s.libMat)}</td><td>${esc(s.diamTxt)}</td><td class="num">${esc(s.annee)}</td><td class="num"><b>${sapNum(s.qty, s.unit)}</b></td><td>${s.unit === 'm' ? 'M' : 'PCE'}</td><td>${esc(s.date || '')}</td></tr>`).join('');
     return `<div class="verdict ${ok ? 'ok' : 'ko'}"><span class="grow">${ok ? '✔' : '✖'} ${esc(R.verdict)}</span>
         ${isForced(vk) ? `<span class="forced small">forcé (auto : ${esc(R.autoVerdict)})</span>` : ''}
         <button class="btn sm sec" data-force="${vk}">Forcer le verdict</button></div>
@@ -517,8 +530,10 @@
       ${groups(R).map(g => renderMatrix(a, R, g)).join('')}
       ${renderAbManual(a, R)}
       <div class="card"><h2>Valeurs à saisir dans SAP (écran ORC)</h2>
-        <h3>Description technique des EOTP — quantité réelle</h3><div class="tw"><table><thead><tr><th>EOTP</th><th>CP</th><th>Nat. ouvr.</th><th class="num">Quantité réelle</th><th>Date MES réelle</th></tr></thead><tbody>${sapPose || '<tr><td colspan="5" class="muted">—</td></tr>'}</tbody></table></div>
-        <h3>Dépose — quantité réelle dép/ab</h3><div class="tw"><table><thead><tr><th>EOTP</th><th>CP</th><th>Bien</th><th>Mat.</th><th>IN</th><th>Année</th><th>Nat. ouvr.</th><th class="num">Quantité</th><th>Date réelle dép/ab</th></tr></thead><tbody>${sapDep || '<tr><td colspan="9" class="muted">—</td></tr>'}</tbody></table></div></div>
+        <p class="small muted">Mêmes colonnes et même ordre que l'écran ORC « Dépose des immobilisations ». Dépose d'ouvrage : supprimer les lignes proposées par SAP, puis créer une ligne par ligne ci-dessous.</p>
+        <h3>Description technique des EOTP</h3><div class="tw"><table><thead><tr><th>Elément d'OTP</th><th>INSEE</th><th class="num">Quantité réelle</th><th>Un.</th><th>Nat. Ouvr</th><th>Date MES réelle</th></tr></thead><tbody>${sapPose || '<tr><td colspan="6" class="muted">—</td></tr>'}</tbody></table></div>
+        <h3>Dépose</h3><div class="tw"><table><thead><tr><th>INSEE</th><th>Désignation</th><th>Elément d'OTP</th><th>Nat. Ouvr</th><th>Désignation</th><th>Mat déposé</th><th>Code diam.</th><th>Libellé matière</th><th>Diamètre ext</th><th class="num">Année d'origine MES</th><th class="num">Qté réelle dép/ab</th><th>Unité</th><th>Date réelle dep/ab</th></tr></thead><tbody>${sapDep || '<tr><td colspan="13" class="muted">—</td></tr>'}</tbody></table></div>
+        ${renderEcartSAP(R)}</div>
       ${renderOrcCompare(R)}
       <div class="card"><div class="row"><h2 class="grow" style="margin:0">PDR</h2><button class="btn sm sec" id="pdrAdd">+ Ajouter un PDR</button></div>
         ${R.pdr.length ? `<div class="tw"><table><thead><tr><th>PDR</th><th>EOTP</th><th>Nature</th><th>Catégorie</th><th>Origine</th></tr></thead><tbody>${pdrRows}</tbody></table></div>` : '<p class="muted">Aucun PDR.</p>'}</div>`;
@@ -608,7 +623,7 @@
       <li><b>Proposition</b> : chaque EOTP de renouvellement reçoit en dépose la quantité posée, en puisant dans les biens <b>du plus ancien au plus récent</b>, CP 22 d'abord puis CP 23. Ce qui reste des biens les plus récents part en <b>abandon</b> (élément AB). Règle vérifiée sur la fiche de correction de l'affaire Cristol.</li>
       <li>Le CA contrôle et modifie toutes les cases (pose et dépose) ; ↺ revient à la proposition. Le reste à répartir de chaque bien doit être nul.</li>
       <li><b>CP 15</b> (restructuration) : <b>pose en tranchée sans dépose</b>. La pose en fouille qui dépasse la dépose disponible est proposée en CP 15 ; la pose en fouille qui remplace un réseau déposé (conversion de pression, changement de diamètre, ex. PE 32 remplacé par PE 63) reste en CP 22. Toute autre colonne peut être ajoutée (« + Ajouter une colonne »).</li>
-      <li>Classes : IN1 &lt; 80 mm ; IN2 de 80 à &lt; 200 mm ; IN3 ≥ 200 mm (diamètre externe).</li></ol>
+      <li>Classes de diamètre externe, comme l'écran ORC : PE : IN1 &lt; 100 ; IN2 ≥ 100 et &lt; 200 ; IN3 ≥ 200. Autres matières (fonte, acier) : IN1 &lt; 80 ; IN2 ≥ 80 et &lt; 200 ; IN3 ≥ 200.</li></ol>
       <h3>Branchements</h3><ul><li>Une ligne carto = un branchement. Le type suit le poste technique quand il est renseigné : poste « BRC » → collectif (CP 26), poste « BRI » → individuel (CP 25). Dépose renouvelée = nombre posé ; le reste des branchements déposés part en abandon. Si la carto ne contient aucun branchement déposé, la dépose proposée est égale à la pose (à vérifier dans SAP). Les branchements, CI et CM abandonnés absents de la carto se saisissent dans « Abandons hors carto ». Le tubage ne s'applique qu'au réseau.</li></ul>
       <h3>Fonte grise</h3><ul><li>Si la structure SAP contient les CP 17, 18, 20 ou 21 à la place de 22, 23, 25 ou 26, l'appli les utilise.</li></ul>
       <h3>PDR</h3><ul><li>Absents de la carto : détectés dans les désignations SAP (« D00000-PDR00000 »). Nature = Abandon si l'EOTP est sous AB, sinon Pose (catégorie S31E). Le branchement d'un poste est traité comme du réseau ; l'option « Brt PDR » (catégorie P21E) reste disponible ligne par ligne.</li></ul>
@@ -792,11 +807,11 @@
     const add = (name, aoa, widths) => { const ws = XLSX.utils.aoa_to_sheet(aoa); if (widths) ws['!cols'] = widths.map(w => ({ wch: w })); XLSX.utils.book_append_sheet(wb, ws, name); };
     add('Synthèse', [[APPNAME + ' Ver.' + VERSION], ['Affaire', a.nom], ['Édité le', nowStr()], ['Fichier pose', a.pose ? a.pose.fileName : ''], ['Fichier dépose', a.depose ? a.depose.fileName : ''],
       ['Verdict', R.verdict + (a.forces.VERDICT ? ' (forcé, auto : ' + R.autoVerdict + ')' : '')], [], ['Niveau', 'Contrôle'], ...R.controls.map(c => [c.level, c.msg])], [18, 120]);
-    add('Bilan', [['', 'Total pose', 'Total dépose', 'Différence (dépose − pose)', 'Unité', 'Lecture'], ...bilan(R).map(x => [x.label, x.pose, x.dep, x.diff, x.unit === 'm' ? 'm' : 'nb', sensDiff(x)])], [30, 12, 12, 24, 6, 60]);
+    add('Bilan', [['', 'Total pose', 'Total dépose', 'Ecart pose / dépose', 'Unité', 'Lecture'], ...bilan(R).map(x => [x.label, x.pose, x.dep, sapSigned(x.ecart), x.unit === 'm' ? 'M' : 'PCE', sensDiff(x)])], [30, 12, 12, 20, 6, 60]);
     add('Répartition', matrixAoa(R), [30, 10, 11, 26, 26, 26, 26, 26, 10]);
-    add('Saisie SAP (ORC)', [['Tableau', 'EOTP', 'CP', 'Bien', 'Mat.', 'IN', 'Année', 'Nat. ouvr.', 'Quantité réelle', 'Unité', 'Date (MES / dép-ab)'],
-      ...R.pose.filter(p => p.qty > 0).map(p => ['Description technique des EOTP', p.col, p.cp, '', '', '', '', p.categorie, p.qty, p.unit === 'm' ? 'M' : 'PCE', p.dateMES || '']),
-      ...R.sapDepose.map(s => ['Dépose', s.col, s.cp, s.label, s.mat, s.IN, s.annee, s.categorie, s.qty, s.unit === 'm' ? 'M' : 'PCE', s.date || ''])], [30, 28, 5, 26, 6, 6, 7, 10, 14, 6, 16]);
+    add('ORC - Description technique', [['Elément d\'OTP', 'INSEE', 'Quantité réelle', 'Un.', 'Nat. Ouvr', 'Date MES réelle'], ...R.pose.filter(p => p.qty > 0).map(p => [p.col, p.insee || '', p.qty, p.unit === 'm' ? 'M' : 'PCE', p.categorie, p.dateMES || ''])], [28, 8, 14, 5, 10, 14]);
+    add('ORC - Dépose', [['INSEE', 'Désignation', 'Elément d\'OTP', 'Nat. Ouvr', 'Désignation', 'Mat déposé', 'Code diam.', 'Libellé matière', 'Diamètre ext', 'Année d\'origine MES', 'Qté réelle dép/ab', 'Unité', 'Date réelle dep/ab'],
+      ...R.sapDepose.map(s => [s.insee, s.commune, s.col, s.categorie, s.designation, s.mat, s.IN, s.libMat, s.diamTxt, s.annee, s.qty, s.unit === 'm' ? 'M' : 'PCE', s.date || ''])], [8, 12, 28, 9, 34, 10, 10, 14, 16, 12, 14, 6, 14]);
     add('PDR', [['PDR', 'EOTP', 'Nature', 'Catégorie', 'Origine'], ...R.pdr.map(p => [p.pdr, p.eotp, p.nature, p.categorie, p.auto ? 'détecté SAP' : 'manuel'])], [18, 28, 10, 10, 12]);
     add('Tronçons pose', [LINE_HDR, ...lineRows(R, 'pose')], [6, 12, 26, 12, 8, 7, 5, 6, 10, 9, 7, 30, 7]);
     add('Tronçons dépose', [LINE_HDR, ...lineRows(R, 'depose')], [6, 12, 26, 12, 8, 7, 5, 6, 10, 9, 7, 30, 7]);
@@ -850,7 +865,7 @@
       doc.autoTable({ startY: y + 2, head: [head], body: body.length ? body : [['—']], styles: { fontSize: 7.5, cellPadding: 1.2 }, headStyles: { fillColor: blue }, margin: { left: 10, right: 10 }, ...opts });
       y = doc.lastAutoTable.finalY + 8;
     };
-    tbl('Bilan pose / dépose', ['', 'Total pose', 'Total dépose', 'Différence (dépose − pose)', 'Lecture'], bilan(R).map(x => [x.label, fmtQ(x.pose, x.unit), fmtQ(x.dep, x.unit), (x.diff > 0 ? '+' : '') + fmtQ(x.diff, x.unit), sensDiff(x)]));
+    tbl('Bilan pose / dépose', ['', 'Total pose', 'Total dépose', 'Ecart pose / dépose', 'Lecture'], bilan(R).map(x => [x.label, fmtQ(x.pose, x.unit), fmtQ(x.dep, x.unit), sapSigned(x.ecart) + (x.unit === 'm' ? ' M' : ' PCE'), sensDiff(x)]));
     tbl('Contrôles', ['Niveau', 'Contrôle'], R.controls.map(c => [c.level.toUpperCase(), c.msg]), { columnStyles: { 0: { cellWidth: 18 } } });
     for (const g of groups(R)) {
       const tot = c => R.eotpTotals.find(e => e.col === c.col) || { pose: 0, depose: 0 };
@@ -858,8 +873,9 @@
         g.biens.map(b => [b.label, b.virtuel ? '—' : fmt(b.exact), fmt(b.cap), ...g.cols.map(c => fmt(b.cells[c.col] || 0)), fmt(b.reste)])
           .concat([['Dépose par EOTP', '', '', ...g.cols.map(c => fmt(tot(c).depose)), ''], ['Pose par EOTP', '', '', ...g.cols.map(c => c.cp === 'AB' ? '—' : fmt(tot(c).pose)), '']]));
     }
-    tbl('Valeurs à saisir dans SAP — Description technique des EOTP', ['EOTP', 'CP', 'Nat. ouvr.', 'Quantité réelle', 'Date MES réelle'], R.pose.filter(p => p.qty > 0).map(p => [p.col, p.cp || '', p.categorie, fmtQ(p.qty, p.unit), p.dateMES || '']));
-    tbl('Valeurs à saisir dans SAP — Dépose', ['EOTP', 'CP', 'Bien', 'Mat.', 'IN', 'Année', 'Nat. ouvr.', 'Quantité réelle', 'Date réelle dép/ab'], R.sapDepose.map(s => [s.col, s.cp || '', s.label, s.mat, s.IN, s.annee, s.categorie, fmtQ(s.qty, s.unit), s.date || '']));
+    tbl('Valeurs à saisir dans SAP — Description technique des EOTP', ['Elément d\'OTP', 'INSEE', 'Quantité réelle', 'Un.', 'Nat. Ouvr', 'Date MES réelle'], R.pose.filter(p => p.qty > 0).map(p => [p.col, p.insee || '', fmt(p.qty), p.unit === 'm' ? 'M' : 'PCE', p.categorie, p.dateMES || '']));
+    tbl('Valeurs à saisir dans SAP — Dépose', ['INSEE', 'Désignation', 'Elément d\'OTP', 'Nat. Ouvr', 'Désignation', 'Mat', 'Code diam.', 'Libellé matière', 'Diamètre ext', 'Année MES', 'Qté réelle dép/ab', 'Unité', 'Date réelle dep/ab'],
+      R.sapDepose.map(s => [s.insee, s.commune, s.col, s.categorie, s.designation, s.mat, s.IN, s.libMat, s.diamTxt, s.annee, fmt(s.qty), s.unit === 'm' ? 'M' : 'PCE', s.date || '']), { styles: { fontSize: 6.5, cellPadding: 1 } });
     if (R.orc) tbl("Comparaison avec l'écran ORC", ['Tableau', 'EOTP', 'Désignation', 'Mat.', 'IN', 'Année', 'Qté prév.', 'Qté réelle SAP', 'Proposition', 'Statut'],
       R.orc.pose.map(x => ['Pose', x.eotp, x.nat || '', '', '', '', x.prev ?? '—', x.reel ?? '—', x.app, statut(x)])
         .concat(R.orc.depose.map(x => ['Dépose', x.eotp, x.designation || '', x.mat || '', x.IN || '', x.annee || '', x.prev ?? '—', x.reel ?? '—', x.app, statut(x)])));
