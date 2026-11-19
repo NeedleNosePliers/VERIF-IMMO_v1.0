@@ -1,7 +1,7 @@
 /* VERIF-IMMO — interface. Tout est traité localement dans le navigateur. */
 (function () {
   'use strict';
-  const VERSION = '6.0';
+  const VERSION = '6.1';
   const APPNAME = 'VERIF-IMMO';
   const E = window.VIEngine;
   const STORE_KEY = 'verifimmo.v1';
@@ -236,11 +236,11 @@
           }
           a.dt = a.dt || [];
           a.dt.push({ ...d, id: Date.now().toString(36) + i }); added++; usedTargets.add('dt');
-          if (target !== 'dt') toast('Capture reconnue comme l\'écran Descr. tech. : rangée dans la capture 3.');
+          
           continue;
         }
-        if (tgt === 'eotp' && looksOrc) { tgt = 'orc'; toast("Capture reconnue comme l'écran ORC : rangée dans la capture 2."); }
-        else if (tgt === 'orc' && !looksOrc && E.parseOcrText(data.text).length) { tgt = 'eotp'; toast('Capture reconnue comme la structure du projet : rangée dans la capture 1.'); }
+        if (tgt === 'eotp' && looksOrc) { tgt = 'orc';  }
+        else if (tgt === 'orc' && !looksOrc && E.parseOcrText(data.text).length) { tgt = 'eotp';  }
         usedTargets.add(tgt);
         if (tgt === 'orc') {
           const o = E.parseOrcText(data.text);
@@ -263,7 +263,6 @@
       if (usedTargets.has('dt')) a.dtVerified = false;
       if (usedTargets.has('eotp')) a.eotpVerified = false;
       ui.ocr = null; touch(a); render();
-      if (usedTargets.size === 1 && !usedTargets.has(target)) return; // le message de réorientation est déjà affiché
       if (usedTargets.has('dt') && usedTargets.size === 1) { toast(`${added} écran(s) Descr. tech. lu(s). Vérifiez les valeurs lues puis cochez « Écrans Descr. tech. vérifiés ».`); return; }
       toast(usedTargets.has('orc') && !usedTargets.has('eotp') ? `${added} ligne(s) lue(s) sur l'écran ORC. Vérifiez puis cochez « Écran ORC vérifié ».` : `${added} EOTP ajouté(s). Vérifiez la liste puis cochez « Liste vérifiée ».`);
     } catch (e) {
@@ -365,13 +364,13 @@
     const ocr = ui.ocr ? `<div class="card"><b>${ui.ocr.target === 'orc' ? 'Écran ORC' : 'Structure du projet'}</b> — <b id="ocrst">${esc(ui.ocr.status)}</b><div class="prog"><i id="ocrbar" style="width:${Math.round(ui.ocr.p * 100)}%"></i></div>
       <div class="thumbs">${ui.ocr.thumbs.map(u => `<img src="${u}" alt="capture">`).join('')}</div>
       <p class="small muted">La première lecture charge le moteur (quelques secondes). Tout se passe sur cet appareil.</p></div>` : '';
-    return `<div class="row" style="margin-bottom:12px;align-items:center"><span class="grow small muted">Une seule des deux captures suffit pour obtenir le résultat ; les deux donnent le contrôle le plus complet.</span>
-        <button class="btn" data-tab="resultat">Voir le résultat →</button></div>
-      <div class="card"><h2>Capture 1 — Structure du projet (« Donn. base ») <span class="small muted">(au choix)</span></h2>
-      <label class="drop" id="dropImg" data-paste="eotp"><b>Déposer / coller les captures d'écran ici</b><br><span class="small">ou cliquer pour choisir (photos sur téléphone)</span>
+    return `<div class="row" style="margin-bottom:12px;align-items:center"><span class="grow"></span><button class="btn" data-tab="resultat">Voir le résultat →</button></div>
+      <div class="card"><h2>Captures SAP</h2>
+      <p class="small muted">Une capture par EOTP de niveau 4 : la synthèse des EOTP (onglet « Donn. base ») avec, à côté, la fenêtre de l'élément ouverte sur l'onglet « Descr. tech. ». L'appli range seule chaque partie : liste des EOTP, et valeurs de pose saisies. Une capture de l'écran ORC peut aussi être déposée ici.</p>
+      <label class="drop" id="dropImg" data-paste="eotp"><b>Déposer / coller les captures SAP ici</b><br><span class="small">ou cliquer pour choisir (photos sur téléphone)</span>
         <input type="file" id="inImg" accept="image/*" multiple hidden></label></div>
       ${ocr}
-      <div class="card"><div class="row"><h2 class="grow" style="margin:0">Vérification (${a.eotps.length} lignes)</h2>
+      <div class="card"><div class="row"><h2 class="grow" style="margin:0">Liste des EOTP lue (${a.eotps.length} lignes)</h2>
         <button class="btn sm sec" id="eotpAdd">+ Ajouter une ligne</button>
         ${a.eotps.length ? '<button class="btn sm danger" id="eotpClear">Vider la liste</button>' : ''}</div>
       <p class="small muted">Les lignes sont dans le même ordre que dans SAP. Comparez chaque ligne avec l'écran SAP et corrigez si besoin (+ insère une ligne en dessous, ↑ ↓ déplacent). Les EOTP sont toujours écrits en entier (ex : RV4-0000000-1-C1-22-I01).</p>
@@ -392,11 +391,10 @@
       const sel = `<select data-dt="${i}:eotpChoisi"><option value="">${esc(c.eotpRetenu ? c.eotpRetenu + (c.sure ? '' : ' (à vérifier)') : 'EOTP non reconnu')}</option>${poseE.map(e => `<option value="${esc(e)}" ${d.eotpChoisi === e ? 'selected' : ''}>${esc(e)}</option>`).join('')}</select>`;
       return `<tr><td>${sel}<div class="small muted">lu : ${esc(d.eotpRaw || '—')}</div></td><td>${inp(i, 'qte', d.qte == null ? '' : fmt(d.qte))}</td><td>${inp(i, 'unite', d.unite, 40)}</td><td>${inp(i, 'dateMes', d.dateMes, 95)}</td><td>${inp(i, 'dateCloture', d.dateCloture, 95)}</td><td>${inp(i, 'codePlan', d.codePlan, 40)}</td><td>${inp(i, 'codeMat', d.codeMat, 40)}</td><td>${inp(i, 'diametre', d.diametre, 60)}</td><td>${inp(i, 'pression', d.pression, 50)}</td><td>${inp(i, 'nat', d.nat, 55)}</td><td><button class="btn sm danger" data-dtdel="${i}">✕</button></td></tr>`;
     }).join('');
-    return `<div class="card"><div class="row"><h2 class="grow" style="margin:0">Capture 3 — Écran élément d'OTP, onglet « Descr. tech. » (pose) <span class="small muted">(au choix)</span></h2>
+    if (!dts.length) return '';
+    return `<div class="card"><div class="row"><h2 class="grow" style="margin:0">Écrans élément OTP lus — onglet « Descr. tech. » (pose)</h2>
         ${dts.length ? '<button class="btn sm danger" id="dtClear">Vider</button>' : ''}</div>
-      <p class="small muted">Une capture par EOTP de pose, après saisie. La fenêtre « élément OTP » peut être capturée avec la synthèse des EOTP à côté : l'appli lit les deux (la liste des EOTP part dans la capture 1). L'appli contrôle la saisie face à la carto (onglet Répartition).</p>
-      <label class="drop" id="dropDt" data-paste="dt"><b>Déposer / coller les captures « Descr. tech. » ici</b><br><span class="small">ou cliquer pour choisir</span>
-        <input type="file" id="inDt" accept="image/*" multiple hidden></label>
+
       ${dts.length ? `<div class="tw"><table><thead><tr><th>Élément d'OTP</th><th>Qté réelle (en serv)</th><th>Unité mes.</th><th>Date MES réelle</th><th>Date de clôture prév</th><th>Code Plan</th><th>Code matière</th><th>Diamètre</th><th>Pression posée</th><th>Nature d'ouvrage</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
       <label class="row" style="margin-top:12px;font-weight:600;cursor:pointer"><input type="checkbox" id="dtOk" ${a.dtVerified ? 'checked' : ''} style="width:20px;height:20px"> Écrans Descr. tech. vérifiés par rapport à SAP</label>` : ''}</div>`;
   }
@@ -408,11 +406,10 @@
     const t1 = o.eotpRows.map((r, i) => `<tr><td>${inp('e', i, 'eotp', r.eotp, 220)}</td><td>${inp('e', i, 'prev', fmt(r.prev))}</td><td>${inp('e', i, 'reel', fmt(r.reel))}</td><td>${esc(r.unit)}</td><td>${inp('e', i, 'nat', r.nat)}</td><td><button class="btn sm danger" data-orcdel="e:${i}">✕</button></td></tr>`).join('');
     const t2 = o.deposeRows.map((r, i) => `<tr><td>${inp('d', i, 'eotp', r.eotp, 220)}</td><td>${inp('d', i, 'nat', r.nat)}</td><td>${inp('d', i, 'designation', r.designation, 200)}</td><td>${inp('d', i, 'mat', r.mat, 45)}</td><td>${inp('d', i, 'IN', r.IN, 50)}</td><td>${inp('d', i, 'annee', r.annee, 60)}</td><td>${inp('d', i, 'prev', fmt(r.prev))}</td><td>${inp('d', i, 'reel', fmt(r.reel))}</td><td>${esc(r.unit)}</td><td><button class="btn sm danger" data-orcdel="d:${i}">✕</button></td></tr>`).join('');
     const has = o.eotpRows.length || o.deposeRows.length;
-    return `<div class="card"><div class="row"><h2 class="grow" style="margin:0">Capture 2 — Écran ORC « Dépose des immobilisations » <span class="small muted">(au choix)</span></h2>
+    if (!has) return '';
+    return `<div class="card"><div class="row"><h2 class="grow" style="margin:0">Écran ORC « Dépose des immobilisations » lu</h2>
         ${has ? '<button class="btn sm danger" id="orcClear">Vider</button>' : ''}</div>
-      <p class="small muted">Capture des deux tableaux « Description technique des EOTP » et « Dépose ». L'appli compare ensuite les quantités réelles saisies dans SAP avec sa proposition (onglet Résultat).</p>
-      <label class="drop" id="dropOrc" data-paste="orc"><b>Déposer / coller la capture de l'écran ORC ici</b><br><span class="small">ou cliquer pour choisir</span>
-        <input type="file" id="inOrc" accept="image/*" multiple hidden></label>
+
       ${has ? `<h3>Description technique des EOTP (pose)</h3><div class="tw"><table><thead><tr><th>Élément d'OTP</th><th>Qté prév.</th><th>Qté réelle</th><th>Unité</th><th>Nat. ouvr.</th><th></th></tr></thead><tbody>${t1 || '<tr><td colspan="6" class="muted">—</td></tr>'}</tbody></table></div>
       <h3>Dépose</h3><div class="tw"><table><thead><tr><th>Élément d'OTP</th><th>Nat. ouvr.</th><th>Désignation</th><th>Mat.</th><th>IN</th><th>Année</th><th>Qté prév.</th><th>Qté réelle</th><th>Unité</th><th></th></tr></thead><tbody>${t2 || '<tr><td colspan="10" class="muted">—</td></tr>'}</tbody></table></div>
       <label class="row" style="margin-top:12px;font-weight:600;cursor:pointer"><input type="checkbox" id="orcOk" ${a.orcVerified ? 'checked' : ''} style="width:20px;height:20px"> Écran ORC vérifié par rapport à SAP</label>` : ''}</div>`;
@@ -711,7 +708,7 @@
     return `<div class="card help"><h1>Aide — ${APPNAME} Ver.${VERSION}</h1>
       <h3>Étapes</h3><ol>
       <li><b>Fichiers carto</b> : glisser les deux fichiers « G Canalisation » (pose et dépose) envoyés par la carto, sans les ouvrir.</li>
-      <li><b>Captures SAP</b> : capture de la structure du projet (onglet « Donn. base »), puis, si possible, capture de l'écran ORC « Dépose des immobilisations ». Vérification de ce qui a été lu.</li>
+      <li><b>Captures SAP</b> : une capture par EOTP de niveau 4, la synthèse des EOTP (onglet « Donn. base ») avec la fenêtre de l'élément ouverte sur l'onglet « Descr. tech. ». L'appli en tire la liste des EOTP et contrôle les valeurs de pose saisies. Une capture de l'écran ORC « Dépose des immobilisations » est acceptée en plus, pour contrôler la dépose. Vérification de ce qui a été lu.</li>
       <li><b>Répartition</b> : verdict, schéma, contrôles, tableau de répartition des biens entre les EOTP (modifiable), valeurs à saisir dans SAP, comparaison avec l'écran ORC, PDR.</li>
       <li><b>Tronçons</b> : détail des tronçons de la carto et correction de leurs valeurs.</li>
       <li><b>Export</b> : PDF / Excel avec la trace des forçages, sauvegarde de l'affaire.</li></ol>
