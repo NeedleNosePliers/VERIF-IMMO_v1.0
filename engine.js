@@ -531,17 +531,11 @@
           if (p.cp === '15' || p.role === 'RES_RS') continue; // CP 15 : réseau nouveau, sans dépose
           let need = p.qty;
           for (const b of bs.slice().sort(oldestFirst)) need -= take(b, p.col, Math.min(need, rem[b.key]));
-          // branchements posés sans branchements déposés dans la carto : dépose proposée = pose (à vérifier)
-          if (need > 0 && F !== 'RES' && !bs.length) {
-            const key = `${ch}|${F}`;
-            const b = { key, chantier: ch, type: F, fam: F, mat: '', IN: '', annee: '', insee: '', unit: 'u', exact: 0, exactTube: 0, lines: [], cap: need, tubeCap: 0,
-              label: TYPE_LABEL[F], cells: {}, auto: {}, virtuel: true };
-            biens.push(b); bs.push(b); rem[key] = need;
-            need -= take(b, p.col, need);
-            infoBrt.add(`${TYPE_LABEL[F]} : aucun branchement déposé dans la carto — dépose proposée égale à la pose (${b.cap}), à vérifier dans SAP.`);
-          }
+          // aucune dépose de ce type (carto + saisie du CA) : on n'invente rien, dépose 0
+          if (F !== 'RES' && !bs.length && p.qty > 0)
+            infoBrt.add(`${TYPE_LABEL[F]} : aucune dépose dans la carto — dépose 0. Si des branchements ont été déposés, les saisir dans « Abandons hors carto ».`);
         }
-        // abandons hors carto saisis par le CA : ajoutés au bien du type, et donc en abandon
+        // abandons hors carto saisis par le CA (branchements, CI, CM) : ajoutés au bien du type, en abandon (fiche Cristol : 6 BRI hors carto en AB)
         if (nMan) {
           const key = `${ch}|${F}`;
           let b = bs.find(x => x.key === key);

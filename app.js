@@ -1,7 +1,7 @@
 /* VERIF-IMMO — interface. Tout est traité localement dans le navigateur. */
 (function () {
   'use strict';
-  const VERSION = '4.9';
+  const VERSION = '4.10';
   const APPNAME = 'VERIF-IMMO';
   const E = window.VIEngine;
   const STORE_KEY = 'verifimmo.v1';
@@ -489,14 +489,11 @@
   // branchements / CI / CM abandonnés absents de la carto : saisis par le CA
   function renderAbManual(a, R) {
     const m = a.abManual || {};
-    const sapAB = f => { if (!R.orc) return null; let n = 0, seen = false; for (const d of R.orc.depose) { const p = E.parseEotpCode(d.eotp); if (p && p.cp === 'AB' && !d.mat && !d.absent && ({ BI: /^P21/, BC: /^P23/, CI: /^P25/, CM: /^P24/ })[f].test(d.nat || '')) { n += d.reel || 0; seen = true; } } return seen ? n : null; };
-    const rows = [['BI', 'Branchements individuels'], ['BC', 'Branchements collectifs'], ['CI', 'CI (conduites d\'immeuble)'], ['CM', 'CM (conduites montantes)']].map(([f, l]) => {
-      const s = sapAB(f);
-      return `<tr><td>${l}</td><td class="num"><input class="n" inputmode="numeric" data-abman="${f}" value="${m[f] ? m[f] : ''}" placeholder="0"></td><td class="num">${s == null ? '—' : `<span ${s !== (+m[f] || 0) ? 'style="color:var(--orange);font-weight:600"' : ''}>SAP : ${s}</span>`}</td></tr>`;
-    }).join('');
+    const rows = [['BI', 'Branchements individuels'], ['BC', 'Branchements collectifs'], ['CI', 'CI (conduites d\'immeuble)'], ['CM', 'CM (conduites montantes)']].map(([f, l]) =>
+      `<tr><td>${l}</td><td class="num"><input class="n" inputmode="numeric" data-abman="${f}" value="${m[f] ? m[f] : ''}" placeholder="0"></td></tr>`).join('');
     return `<div class="card"><h2>Abandons hors carto</h2>
       <p class="small muted">Branchements, CI ou CM abandonnés qui ne figurent pas dans le fichier de dépose de la carto. Le nombre saisi part en abandon sur l'élément AB correspondant.</p>
-      <div class="tw" style="max-width:560px"><table><thead><tr><th>Type</th><th class="num">Nombre abandonné</th><th class="num">Écran ORC</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+      <div class="tw" style="max-width:420px"><table><thead><tr><th>Type</th><th class="num">Nombre abandonné</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
   }
 
   function renderResultat(a, R) {
@@ -624,7 +621,7 @@
       <li>Le CA contrôle et modifie toutes les cases (pose et dépose) ; ↺ revient à la proposition. Le reste à répartir de chaque bien doit être nul.</li>
       <li><b>CP 15</b> (restructuration) : <b>pose en tranchée sans dépose</b>. La pose en fouille qui dépasse la dépose disponible est proposée en CP 15 ; la pose en fouille qui remplace un réseau déposé (conversion de pression, changement de diamètre, ex. PE 32 remplacé par PE 63) reste en CP 22. Toute autre colonne peut être ajoutée (« + Ajouter une colonne »).</li>
       <li>Classes de diamètre externe, comme l'écran ORC : PE : IN1 &lt; 100 ; IN2 ≥ 100 et &lt; 200 ; IN3 ≥ 200. Autres matières (fonte, acier) : IN1 &lt; 80 ; IN2 ≥ 80 et &lt; 200 ; IN3 ≥ 200.</li></ol>
-      <h3>Branchements</h3><ul><li>Une ligne carto = un branchement. Le type suit le poste technique quand il est renseigné : poste « BRC » → collectif (CP 26), poste « BRI » → individuel (CP 25). Dépose renouvelée = nombre posé ; le reste des branchements déposés part en abandon. Si la carto ne contient aucun branchement déposé, la dépose proposée est égale à la pose (à vérifier dans SAP). Les branchements, CI et CM abandonnés absents de la carto se saisissent dans « Abandons hors carto ». Le tubage ne s'applique qu'au réseau.</li></ul>
+      <h3>Branchements</h3><ul><li>Une ligne carto = un branchement. Le type suit le poste technique quand il est renseigné : poste « BRC » → collectif (CP 26), poste « BRI » → individuel (CP 25). Dépose renouvelée = nombre posé ; le reste des branchements déposés part en abandon. Si la carto ne contient aucun branchement déposé, la dépose est 0 : l'app n'invente aucune quantité. Les branchements, CI et CM déposés absents de la carto se saisissent dans « Abandons hors carto » et partent en abandon (AB). Le tubage ne s'applique qu'au réseau.</li></ul>
       <h3>Fonte grise</h3><ul><li>Si la structure SAP contient les CP 17, 18, 20 ou 21 à la place de 22, 23, 25 ou 26, l'appli les utilise.</li></ul>
       <h3>PDR</h3><ul><li>Absents de la carto : détectés dans les désignations SAP (« D00000-PDR00000 »). Nature = Abandon si l'EOTP est sous AB, sinon Pose (catégorie S31E). Le branchement d'un poste est traité comme du réseau ; l'option « Brt PDR » (catégorie P21E) reste disponible ligne par ligne.</li></ul>
       <h3>Contrôles</h3><ul>
