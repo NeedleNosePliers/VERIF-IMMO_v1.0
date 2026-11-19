@@ -1,7 +1,7 @@
 /* VERIF-IMMO — interface. Tout est traité localement dans le navigateur. */
 (function () {
   'use strict';
-  const VERSION = '5.2';
+  const VERSION = '5.3';
   const APPNAME = 'VERIF-IMMO';
   const E = window.VIEngine;
   const STORE_KEY = 'verifimmo.v1';
@@ -187,13 +187,53 @@
       for (let i = 0; i < imgs.length; i++) {
         const { img, url } = await loadImg(imgs[i]);
         ui.ocr.thumbs.push(url); ui.ocr.status = `Lecture de la capture ${i + 1}/${imgs.length}…`; render();
-        const { data } = await w.recognize(preprocess(img));
+        const cv = preprocess(img);
+        const { data } = await w.recognize(cv, {}, { text: true, blocks: true });
         // capture déposée dans la mauvaise zone : on la reconnaît à son contenu
         let tgt = target;
         const looksDt = /Donn[ée]es de mise en service|\(en serv\)|Code Finalit[ée]|Pression pos[ée]e/i.test(data.text);
         const looksOrc = !looksDt && /Description technique des EOTP|Qt[ée]\.? r[ée]elle|Qt[ée]\.? pr[ée]v|Date d[ée]p/i.test(data.text);
         if (looksDt) {
-          const d = E.parseDtText(data.text);
+          // fenêtre « Afficher / Modifier élément OTP » à côté de la synthèse des EOTP : chaque partie est relue seule
+          const words = [];
+          for (const bl of data.blocks || []) for (const pa of bl.paragraphs || []) for (const li of pa.lines || []) for (const wd of li.words || []) words.push(wd);
+          let x0 = null;
+          for (let k = 0; k < words.length - 1; k++) if (/^(Afficher|Modifier|Cr[ée]er)$/i.test(words[k].text) && /^[ée]l[ée]ment$/i.test(words[k + 1].text) && words[k].bbox.x0 > cv.width * 0.2) x0 = words[k].bbox.x0;
+          let dtText = data.text, dtData = data, dtCv = cv;
+          const crop = (xa, xb) => { const c = document.createElement('canvas'); c.width = xb - xa; c.height = cv.height; c.getContext('2d').drawImage(cv, xa, 0, c.width, c.height, 0, 0, c.width, c.height); return c; };
+          if (x0 != null) {
+            const xa = Math.max(0, x0 - 60);
+            ui.ocr.status = `Lecture de la capture ${i + 1}/${imgs.length} (fenêtre Descr. tech.)…`; updOcr();
+            dtCv = crop(xa, cv.width);
+            dtData = (await w.recognize(dtCv, {}, { text: true, blocks: true })).data; dtText = dtData.text;
+            if (/Synth[èe]se des [EF]OTP/i.test(data.text)) {
+              ui.ocr.status = `Lecture de la capture ${i + 1}/${imgs.length} (liste des EOTP)…`; updOcr();
+              const listText = (await w.recognize(crop(0, xa))).data.text;
+              let n = 0;
+              for (const r of E.parseOcrText(listText)) {
+                const ex = a.eotps.find(e => e.code === r.code);
+                if (ex) { if (ex.src === 'ORC' || !ex.designation) { ex.designation = r.designation; ex.src = 'capture'; } continue; }
+                a.eotps.push({ code: r.code, designation: r.designation, src: 'capture' }); n++;
+              }
+              if (n) { usedTargets.add('eotp'); added += n; }
+            }
+          }
+          let d = E.parseDtText(dtText);
+          // champ « Nature d'ouvrage » (ligne à boutons, souvent sautée) : relu seul, sous « Gestion. Nature d'ouvrage »
+          if (!d.nat) {
+            const ws = [];
+            for (const bl of dtData.blocks || []) for (const pa of bl.paragraphs || []) for (const li of pa.lines || []) for (const wd of li.words || []) ws.push(wd);
+            const gw = ws.find(x => /^Gestion/i.test(x.text));
+            if (gw) {
+              const h = gw.bbox.y1 - gw.bbox.y0;
+              const rect = { left: gw.bbox.x0, top: gw.bbox.y1 + Math.round(h * 0.3), width: Math.min(Math.round(h * 28), dtCv.width - gw.bbox.x0), height: Math.min(Math.round(h * 2.6), dtCv.height - gw.bbox.y1) };
+              try {
+                await w.setParameters({ tessedit_pageseg_mode: '7' });
+                const nt = (await w.recognize(dtCv, { rectangle: rect })).data.text;
+                const n2 = E.parseDtText(nt).nat; if (n2) d = { ...d, nat: n2 };
+              } finally { await w.setParameters({ tessedit_pageseg_mode: '3' }); }
+            }
+          }
           a.dt = a.dt || [];
           a.dt.push({ ...d, id: Date.now().toString(36) + i }); added++; usedTargets.add('dt');
           if (target !== 'dt') toast('Capture reconnue comme l\'écran Descr. tech. : rangée dans la capture 3.');
@@ -354,7 +394,7 @@
     }).join('');
     return `<div class="card"><div class="row"><h2 class="grow" style="margin:0">Capture 3 — Écran élément d'OTP, onglet « Descr. tech. » (pose) <span class="small muted">(au choix)</span></h2>
         ${dts.length ? '<button class="btn sm danger" id="dtClear">Vider</button>' : ''}</div>
-      <p class="small muted">Une capture par EOTP de pose, après saisie. L'appli contrôle la saisie face à la carto (onglet Répartition).</p>
+      <p class="small muted">Une capture par EOTP de pose, après saisie. La fenêtre « élément OTP » peut être capturée avec la synthèse des EOTP à côté : l'appli lit les deux (la liste des EOTP part dans la capture 1). L'appli contrôle la saisie face à la carto (onglet Répartition).</p>
       <label class="drop" id="dropDt" data-paste="dt"><b>Déposer / coller les captures « Descr. tech. » ici</b><br><span class="small">ou cliquer pour choisir</span>
         <input type="file" id="inDt" accept="image/*" multiple hidden></label>
       ${dts.length ? `<div class="tw"><table><thead><tr><th>Élément d'OTP</th><th>Qté réelle (en serv)</th><th>Unité mes.</th><th>Date MES réelle</th><th>Date de clôture prév</th><th>Code Plan</th><th>Code matière</th><th>Diamètre</th><th>Pression posée</th><th>Nature d'ouvrage</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
