@@ -1,7 +1,7 @@
 /* VERIF-IMMO — interface. Tout est traité localement dans le navigateur. */
 (function () {
   'use strict';
-  const VERSION = '6.3';
+  const VERSION = '6.4';
   const APPNAME = 'VERIF-IMMO';
   const E = window.VIEngine;
   const STORE_KEY = 'verifimmo.v1';
@@ -366,11 +366,17 @@
       <p class="small muted">La première lecture charge le moteur (quelques secondes). Tout se passe sur cet appareil.</p></div>` : '';
     return `<div class="row" style="margin-bottom:12px;align-items:center"><span class="grow"></span><button class="btn" data-tab="resultat">Voir le résultat →</button></div>
       <div class="card"><h2>Captures SAP</h2>
-      <p class="small muted">Une capture par EOTP de niveau 4 : la synthèse des EOTP (onglet « Donn. base ») avec, à côté, la fenêtre de l'élément ouverte sur l'onglet « Descr. tech. ». L'appli range seule chaque partie : liste des EOTP, et valeurs de pose saisies. Une capture de l'écran ORC peut aussi être déposée ici.</p>
+      <p class="small muted">Une capture par EOTP de niveau 4, prise dans SAP :</p>
+      <ol class="small muted" style="margin:0 0 10px 18px;padding:0">
+        <li>écran <b>« Afficher (Pré-)Affaire : Synthèse des EOTP »</b>, onglet « Donn. base » (liste des éléments d'OTP) ;</li>
+        <li>sélectionner l'élément d'OTP de niveau 4, puis bouton <b>« Description technique et Données de base »</b> : la fenêtre « Afficher élément OTP » s'ouvre, onglet <b>« Descr. tech. »</b> ;</li>
+        <li>capturer l'écran entier, la synthèse et la fenêtre côte à côte.</li>
+      </ol>
+      <p class="small muted">L'appli range seule chaque partie : la liste des EOTP (synthèse) et les valeurs de pose (Descr. tech.). Une capture de l'écran ORC « Dépose des immobilisations » peut aussi être déposée ici.</p>
       <label class="drop" id="dropImg" data-paste="eotp"><b>Déposer / coller les captures SAP ici</b><br><span class="small">ou cliquer pour choisir (photos sur téléphone)</span>
         <input type="file" id="inImg" accept="image/*" multiple hidden></label></div>
       ${ocr}
-      <div class="card"><div class="row"><h2 class="grow" style="margin:0">Liste des EOTP lue (${a.eotps.length} lignes)</h2>
+      <div class="card"><div class="row"><h2 class="grow" style="margin:0">(Pré-)Affaire : Synthèse des EOTP — liste lue (${a.eotps.length} lignes)</h2>
         <button class="btn sm sec" id="eotpAdd">+ Ajouter une ligne</button>
         ${a.eotps.length ? '<button class="btn sm danger" id="eotpClear">Vider la liste</button>' : ''}</div>
       <p class="small muted">Les lignes sont dans le même ordre que dans SAP. Comparez chaque ligne avec l'écran SAP et corrigez si besoin (+ insère une ligne en dessous, ↑ ↓ déplacent). Les EOTP sont toujours écrits en entier (ex : RV4-0000000-1-C1-22-I01).</p>
@@ -392,7 +398,7 @@
       return `<tr><td>${sel}<div class="small muted">lu : ${esc(d.eotpRaw || '—')}</div></td><td>${inp(i, 'qte', d.qte == null ? '' : fmt(d.qte))}</td><td>${inp(i, 'unite', d.unite, 40)}</td><td>${inp(i, 'dateMes', d.dateMes, 95)}</td><td>${inp(i, 'dateCloture', d.dateCloture, 95)}</td><td>${inp(i, 'codePlan', d.codePlan, 40)}</td><td>${inp(i, 'codeMat', d.codeMat, 40)}</td><td>${inp(i, 'diametre', d.diametre, 60)}</td><td>${inp(i, 'pression', d.pression, 50)}</td><td>${inp(i, 'nat', d.nat, 55)}</td><td><button class="btn sm danger" data-dtdel="${i}">✕</button></td></tr>`;
     }).join('');
     if (!dts.length) return '';
-    return `<div class="card"><div class="row"><h2 class="grow" style="margin:0">Écrans élément OTP lus — onglet « Descr. tech. » (pose)</h2>
+    return `<div class="card"><div class="row"><h2 class="grow" style="margin:0">Description technique et Données de base — écrans « Afficher élément OTP », onglet « Descr. tech. » lus (pose)</h2>
         ${dts.length ? '<button class="btn sm danger" id="dtClear">Vider</button>' : ''}</div>
 
       ${dts.length ? `<div class="tw"><table><thead><tr><th>Élément d'OTP</th><th>Qté réelle (en serv)</th><th>Unité mes.</th><th>Date MES réelle</th><th>Date de clôture prév</th><th>Code Plan</th><th>Code matière</th><th>Diamètre</th><th>Pression posée</th><th>Nature d'ouvrage</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
@@ -746,7 +752,7 @@
     return `<div class="card help"><h1>Aide — ${APPNAME} Ver.${VERSION}</h1>
       <h3>Étapes</h3><ol>
       <li><b>Fichiers carto</b> : glisser les deux fichiers « G Canalisation » (pose et dépose) envoyés par la carto, sans les ouvrir.</li>
-      <li><b>Captures SAP</b> : une capture par EOTP de niveau 4, la synthèse des EOTP (onglet « Donn. base ») avec la fenêtre de l'élément ouverte sur l'onglet « Descr. tech. ». L'appli en tire la liste des EOTP et contrôle les valeurs de pose saisies. Une capture de l'écran ORC « Dépose des immobilisations » est acceptée en plus, pour contrôler la dépose. Vérification de ce qui a été lu.</li>
+      <li><b>Captures SAP</b> : une capture par EOTP de niveau 4 : écran « Afficher (Pré-)Affaire : Synthèse des EOTP » (onglet « Donn. base ») avec la fenêtre ouverte par le bouton « Description technique et Données de base » (onglet « Descr. tech. »). L'appli en tire la liste des EOTP et contrôle les valeurs de pose saisies. Une capture de l'écran ORC « Dépose des immobilisations » est acceptée en plus, pour contrôler la dépose. Vérification de ce qui a été lu.</li>
       <li><b>Répartition</b> : verdict, schéma, contrôles, tableau de répartition des biens entre les EOTP (modifiable), valeurs à saisir dans SAP, comparaison avec l'écran ORC, PDR.</li>
       <li><b>Tronçons</b> : détail des tronçons de la carto et correction de leurs valeurs.</li>
       <li><b>Export</b> : PDF / Excel avec la trace des forçages, sauvegarde de l'affaire.</li></ol>

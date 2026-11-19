@@ -789,7 +789,7 @@
       if (d.codeMat && mats.length) push('Code matière', mats.join(' / '), d.codeMat, mats.includes(d.codeMat), 'information');
       if (d.diametre && diams.length) { const n = +(d.diametre.match(/\d+/) || [0])[0]; push('Diamètre', diams.map(x => (mats[0] === 'PE' ? 'PE' : '') + String(x).padStart(3, '0')).join(' / '), d.diametre, diams.includes(n), 'information'); }
       if (d.pression && press.length) push('Pression posée', press.join(' / '), d.pression, press.includes(d.pression), 'information');
-      if (p.categorie) { if (d.nat) push('Nature d\'ouvrage', p.categorie, d.nat, p.categorie.split(' / ').includes(d.nat)); else out.rows.push({ eotp: p.eotp, champ: 'Nature d\'ouvrage', attendu: p.categorie, sap: '—', ok: null, info: 'non lue sur la capture (la saisir dans « Écrans élément OTP lus », onglet Captures SAP)' }); }
+      if (p.categorie) { if (d.nat) push('Nature d\'ouvrage', p.categorie, d.nat, p.categorie.split(' / ').includes(d.nat)); else out.rows.push({ eotp: p.eotp, champ: 'Nature d\'ouvrage', attendu: p.categorie, sap: '—', ok: null, info: 'non lue sur la capture (la saisir dans « Description technique et Données de base », onglet Captures SAP)' }); }
     }
     return out;
   }
