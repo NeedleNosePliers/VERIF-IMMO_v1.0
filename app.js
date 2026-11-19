@@ -1,7 +1,7 @@
 /* VERIF-IMMO — interface. Tout est traité localement dans le navigateur. */
 (function () {
   'use strict';
-  const VERSION = '4.11';
+  const VERSION = '5.0';
   const APPNAME = 'VERIF-IMMO';
   const E = window.VIEngine;
   const STORE_KEY = 'verifimmo.v1';
@@ -346,18 +346,33 @@
       <h3>Dépose</h3><div class="tw"><table><thead><tr><th>Élément d'OTP</th><th>Nat. ouvr.</th><th>Désignation</th><th>Mat.</th><th>IN</th><th>Année</th><th>Qté prév.</th><th>Qté réelle</th><th>Unité</th><th></th></tr></thead><tbody>${t2 || '<tr><td colspan="10" class="muted">—</td></tr>'}</tbody></table></div>
       <label class="row" style="margin-top:12px;font-weight:600;cursor:pointer"><input type="checkbox" id="orcOk" ${a.orcVerified ? 'checked' : ''} style="width:20px;height:20px"> Écran ORC vérifié par rapport à SAP</label>` : ''}</div>`;
   }
+  // contrôle de la saisie SAP : écran ORC face à la carto
+  function controleRows(R) {
+    const C = R.orc && R.orc.controle; if (!C) return [];
+    const q = (n, u) => n == null ? '—' : fmt(n) + (u === 'm' || u === 'M' ? ' m' : '');
+    const st = ok => ok ? 'conforme' : 'à vérifier';
+    const out = [];
+    for (const x of R.orc.pose) if (!x.absent || (R.orc.pose.some(y => !y.absent))) out.push(['Pose (quantité réelle)', x.eotp, q(x.app, x.unit), q(x.reel, x.unit), x.absent ? 'absent de l\'écran ORC' : st(x.ok)]);
+    for (const x of C.biens) out.push(['Bien déposé : total saisi', x.label, q(x.attendu, x.unit), q(x.sap, x.unit), x.horsCarto ? 'absent de la carto' : st(x.ok)]);
+    for (const x of C.equilibre) out.push(['EOTP de renouvellement : dépose = pose', x.eotp, `pose ${q(x.pose, x.unit)} (${x.src})`, `dépose ${q(x.dep, x.unit)}`, st(x.ok)]);
+    for (const x of C.abandon) out.push(['Abandon (AB) = surplus', x.label, `${q(x.attendu, x.unit)} (${x.depose > x.pose ? `dépose ${q(x.depose, x.unit)} − pose ${q(x.pose, x.unit)}` : 'pas de surplus dans la carto'}${x.man ? ' + ' + x.man + ' hors carto' : ''})`, q(x.sap, x.unit), st(x.ok)]);
+    for (const x of C.dates) out.push(['Date réelle dép/ab', `${x.eotp} — ${x.label}`, x.attendu, x.sap, 'à vérifier']);
+    return out;
+  }
   function renderOrcCompare(R) {
     if (!R.orc) return '';
+    const ctl = controleRows(R);
+    const pill = t => t === 'conforme' ? `<span class="pill" style="background:var(--green-l);color:#2f6b10">${t}</span>` : `<span class="pill" style="background:var(--orange-l);color:var(--orange)">${esc(t)}</span>`;
+    const rows = ctl.map(r => `<tr><td>${esc(r[0])}</td><td class="wrap">${esc(r[1])}</td><td class="num">${esc(r[2])}</td><td class="num"><b>${esc(r[3])}</b></td><td>${pill(r[4])}</td></tr>`).join('');
     const st = x => x.absent ? '<span class="pill none">absent de l\'écran ORC</span>' : x.ok ? '<span class="pill" style="background:var(--green-l);color:#2f6b10">identique</span>' : '<span class="pill" style="background:var(--orange-l);color:var(--orange)">différent</span>';
     const u = x => x.unit === 'M' ? ' m' : '';
-    const p = R.orc.pose.map(x => `<tr><td>${esc(x.eotp)}</td><td>${esc(x.nat || '')}</td><td class="num">${x.prev == null ? '—' : fmt(x.prev) + u(x)}</td><td class="num">${x.reel == null ? '—' : fmt(x.reel) + u(x)}</td><td class="num"><b>${fmt(x.app)}${u(x)}</b></td><td>${st(x)}</td></tr>`).join('');
-    const d = R.orc.depose.map(x => `<tr><td>${esc(x.eotp)}</td><td class="wrap">${esc(x.designation || '')}</td><td>${esc(x.mat || '')}</td><td>${esc(x.IN || '')}</td><td>${esc(x.annee || '')}</td><td class="num">${x.prev == null ? '—' : fmt(x.prev) + u(x)}</td><td class="num">${x.reel == null ? '—' : fmt(x.reel) + u(x)}</td><td class="num"><b>${fmt(x.app)}${u(x)}</b></td><td>${st(x)}</td></tr>`).join('');
-    const inv = R.orc.inventaire.map(x => `<tr><td>Réseau ${esc(x.mat)} ${esc(x.IN)} ${esc(x.annee)}</td><td class="num">${x.sap == null ? '—' : fmt(x.sap) + ' m'}</td><td class="num">${fmt(x.carto)} m</td><td>${x.ok ? '<span class="pill" style="background:var(--green-l);color:#2f6b10">identique</span>' : '<span class="pill" style="background:var(--orange-l);color:var(--orange)">différent</span>'}</td></tr>`).join('');
-    return `<div class="card"><h2>Comparaison avec l'écran ORC</h2>
-      <p class="small muted">« Qté réelle SAP » = ce qui est saisi dans SAP ; « Proposition » = la répartition ci-dessus. INSEE non comparé (la carto donne l'arrondissement, SAP la commune).</p>
+    const d = R.orc.depose.filter(x => !x.absent).map(x => `<tr><td>${esc(x.eotp)}</td><td class="wrap">${esc(x.designation || '')}</td><td>${esc(x.mat || '')}</td><td>${esc(x.IN || '')}</td><td>${esc(x.annee || '')}</td><td class="num">${x.prev == null ? '—' : fmt(x.prev) + u(x)}</td><td class="num">${x.reel == null ? '—' : fmt(x.reel) + u(x)}</td><td class="num">${fmt(x.app)}${u(x)}</td><td>${st(x)}</td></tr>`).join('');
+    const inv = R.orc.inventaire.map(x => `<tr><td>Réseau ${esc(x.mat)} ${esc(x.IN)} ${esc(x.annee)}</td><td class="num">${x.sap == null ? '—' : fmt(x.sap) + ' m'}</td><td class="num">${fmt(x.carto)} m</td><td>${x.ok ? pill('conforme') : pill('différent')}</td></tr>`).join('');
+    return `<div class="card"><h2>Contrôle de la saisie SAP (écran ORC)</h2>
+      <p class="small muted">La saisie du CA lue sur les captures ORC, contrôlée face à la carto (et aux abandons hors carto saisis). INSEE non comparé (la carto donne l'arrondissement, SAP la commune).</p>
+      <div class="tw"><table><thead><tr><th>Contrôle</th><th>Élément</th><th class="num">Attendu (carto)</th><th class="num">Saisi dans SAP</th><th>Statut</th></tr></thead><tbody>${rows || '<tr><td colspan="5" class="muted">—</td></tr>'}</tbody></table></div>
       ${inv ? `<h3>Quantité des biens : SAP (« Qté prév. dépose ») / carto</h3><div class="tw"><table><thead><tr><th>Bien</th><th class="num">SAP</th><th class="num">Carto</th><th>Statut</th></tr></thead><tbody>${inv}</tbody></table></div>` : ''}
-      <h3>Pose par EOTP</h3><div class="tw"><table><thead><tr><th>EOTP</th><th>Nat. ouvr.</th><th class="num">Qté prév.</th><th class="num">Qté réelle SAP</th><th class="num">Proposition</th><th>Statut</th></tr></thead><tbody>${p || '<tr><td colspan="6" class="muted">—</td></tr>'}</tbody></table></div>
-      <h3>Dépose / abandon</h3><div class="tw"><table><thead><tr><th>EOTP</th><th>Désignation</th><th>Mat.</th><th>IN</th><th>Année</th><th class="num">Qté prév.</th><th class="num">Qté réelle SAP</th><th class="num">Proposition</th><th>Statut</th></tr></thead><tbody>${d || '<tr><td colspan="9" class="muted">—</td></tr>'}</tbody></table></div></div>`;
+      ${d ? `<details><summary class="small">Lignes de dépose lues sur l'écran ORC, face à la répartition de l'app</summary><div class="tw"><table><thead><tr><th>EOTP</th><th>Désignation</th><th>Mat.</th><th>IN</th><th>Année</th><th class="num">Qté prév.</th><th class="num">Qté réelle SAP</th><th class="num">App</th><th>Statut</th></tr></thead><tbody>${d}</tbody></table></div></details>` : ''}</div>`;
   }
 
   // ----- 3. Répartition -----
@@ -813,7 +828,8 @@
     add('Tronçons pose', [LINE_HDR, ...lineRows(R, 'pose')], [6, 12, 26, 12, 8, 7, 5, 6, 10, 9, 7, 30, 7]);
     add('Tronçons dépose', [LINE_HDR, ...lineRows(R, 'depose')], [6, 12, 26, 12, 8, 7, 5, 6, 10, 9, 7, 30, 7]);
     add('EOTP SAP', [['Élément d\'OTP', 'Désignation'], ...a.eotps.map(e => [e.code, e.designation])], [30, 50]);
-    if (R.orc) add('Comparaison ORC', [['Tableau', 'EOTP', 'Désignation', 'Mat.', 'IN', 'Année', 'Qté prév.', 'Qté réelle SAP', 'Proposition', 'Statut'],
+    if (R.orc) add('Contrôle saisie SAP', [['Contrôle', 'Élément', 'Attendu (carto)', 'Saisi dans SAP', 'Statut'], ...controleRows(R)], [36, 40, 34, 16, 18]);
+    if (R.orc) add('Lignes ORC', [['Tableau', 'EOTP', 'Désignation', 'Mat.', 'IN', 'Année', 'Qté prév.', 'Qté réelle SAP', 'App', 'Statut'],
       ...R.orc.pose.map(x => ['Pose', x.eotp, x.nat || '', '', '', '', x.prev, x.reel, x.app, statut(x)]),
       ...R.orc.depose.map(x => ['Dépose', x.eotp, x.designation || '', x.mat || '', x.IN || '', x.annee || '', x.prev, x.reel, x.app, statut(x)])], [8, 28, 34, 6, 6, 7, 10, 14, 12, 12]);
     add('Forçages', [['Valeur', 'Auto', 'Forcée', 'Commentaire', 'Date'], ...forceRows(a)], [60, 18, 18, 40, 18]);
@@ -873,6 +889,7 @@
     tbl('Valeurs à saisir dans SAP — Description technique des EOTP', ['Elément d\'OTP', 'INSEE', 'Quantité réelle', 'Un.', 'Nat. Ouvr', 'Date MES réelle'], R.pose.filter(p => p.qty > 0).map(p => [p.col, p.insee || '', fmt(p.qty), p.unit === 'm' ? 'M' : 'PCE', p.categorie, p.dateMES || '']));
     tbl('Valeurs à saisir dans SAP — Dépose', ['INSEE', 'Désignation', 'Elément d\'OTP', 'Nat. Ouvr', 'Désignation', 'Mat', 'Code diam.', 'Libellé matière', 'Diamètre ext', 'Année MES', 'Qté réelle dép/ab', 'Unité', 'Date réelle dep/ab'],
       R.sapDepose.map(s => [s.insee, s.commune, s.col, s.categorie, s.designation, s.mat, s.IN, s.libMat, s.diamTxt, s.annee, fmt(s.qty), s.unit === 'm' ? 'M' : 'PCE', s.date || '']), { styles: { fontSize: 6.5, cellPadding: 1 } });
+    if (R.orc) tbl('Contrôle de la saisie SAP (écran ORC)', ['Contrôle', 'Élément', 'Attendu (carto)', 'Saisi dans SAP', 'Statut'], controleRows(R));
     if (R.orc) tbl("Comparaison avec l'écran ORC", ['Tableau', 'EOTP', 'Désignation', 'Mat.', 'IN', 'Année', 'Qté prév.', 'Qté réelle SAP', 'Proposition', 'Statut'],
       R.orc.pose.map(x => ['Pose', x.eotp, x.nat || '', '', '', '', x.prev ?? '—', x.reel ?? '—', x.app, statut(x)])
         .concat(R.orc.depose.map(x => ['Dépose', x.eotp, x.designation || '', x.mat || '', x.IN || '', x.annee || '', x.prev ?? '—', x.reel ?? '—', x.app, statut(x)])));

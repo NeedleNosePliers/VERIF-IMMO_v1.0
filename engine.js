@@ -659,7 +659,7 @@
     if (state.orc && ((state.orc.eotpRows || []).length || (state.orc.deposeRows || []).length)) {
       R.orc = compareOrc(R, state.orc);
       if (state.orcVerified === false) add('orange', "Écran ORC lu sur capture : à vérifier par rapport à SAP puis cocher « Écran ORC vérifié » (onglet Captures SAP).");
-      if (R.orc.nbEcarts) add('orange', `Écran ORC : ${R.orc.nbEcarts} valeur${R.orc.nbEcarts > 1 ? 's' : ''} saisie${R.orc.nbEcarts > 1 ? 's' : ''} dans SAP différente${R.orc.nbEcarts > 1 ? 's' : ''} de la répartition proposée.`);
+      if (R.orc.nbControle) add('orange', `Contrôle de la saisie SAP (écran ORC) : ${R.orc.nbControle} point${R.orc.nbControle > 1 ? 's' : ''} à vérifier.`);
     }
 
     // 12. verdict
@@ -749,6 +749,62 @@
       out.inventaire.push({ mat, IN, annee: +annee, sap, carto: b ? b.cap : 0, ok: b ? Math.abs(b.cap - sap) < EPS : false });
     }
     for (const b of R.biens) if (b.type === 'RES' && !inv[`${b.mat}|${b.IN}|${b.annee}`]) out.inventaire.push({ mat: b.mat, IN: b.IN, annee: b.annee, sap: null, carto: b.cap, ok: false });
+    // contrôle de la saisie du CA : l'écran ORC face à la carto (et non face à la répartition proposée par l'app)
+    const famOfRow = d => {
+      if (d.mat) return 'RES';
+      const n = d.nat || '';
+      if (/^S31/.test(n)) return 'PDR';
+      if (/^P21/.test(n)) return 'BI'; if (/^P23/.test(n)) return 'BC'; if (/^P25/.test(n)) return 'CI'; if (/^P24/.test(n)) return 'CM';
+      const pc = parseEotpCode(d.eotp) || {};
+      return ({ '25': 'BI', '20': 'BI', '26': 'BC', '21': 'BC', '22': 'RES', '23': 'RES', '17': 'RES', '18': 'RES', '15': 'RES' })[pc.cp] || '?';
+    };
+    const chOf = code => (parseEotpCode(code) || {}).chantier || '';
+    const rows = (orc.deposeRows || []).map(d => ({ ...d, fam: famOfRow(d), ch: chOf(d.eotp), cp: (parseEotpCode(d.eotp) || {}).cp || null }));
+    const C = out.controle = { biens: [], equilibre: [], abandon: [], dates: [] };
+    if (rows.length) {
+      // 1. chaque bien de la carto : total saisi dans SAP (toutes EOTP confondues) = quantité carto
+      const bienKeyOf = d => d.fam === 'RES' ? `${d.ch}|RES|${d.mat}|${d.IN}|${d.annee}` : `${d.ch}|${d.fam}`;
+      const sapB = {};
+      for (const d of rows) if (d.fam !== 'PDR' && d.fam !== '?') { const k = bienKeyOf(d); sapB[k] = (sapB[k] || 0) + (d.reel || 0); }
+      for (const b of R.biens) {
+        const sap = sapB[b.key] ?? 0;
+        C.biens.push({ label: b.label + (b.manuel ? ` (dont ${b.manuel} hors carto)` : ''), unit: b.unit, attendu: b.cap, sap, ok: Math.abs(sap - b.cap) < EPS });
+      }
+      for (const [k, sap] of Object.entries(sapB)) if (!R.biens.some(b => b.key === k)) {
+        const [, fam, mat, IN, annee] = k.split('|');
+        C.biens.push({ label: fam === 'RES' ? `Réseau ${mat} ${IN} ${annee}` : TYPE_LABEL[fam], unit: fam === 'RES' ? 'm' : 'u', attendu: 0, sap, ok: false, horsCarto: true });
+      }
+      // 2. chaque EOTP de renouvellement : dépose saisie = quantité posée
+      const poseSap = {}; for (const e of orc.eotpRows || []) poseSap[e.eotp] = e.reel;
+      const eotps = new Set(R.pose.filter(p => p.eotp && RENEW_CP.includes(p.cp)).map(p => p.eotp));
+      rows.forEach(d => { if (RENEW_CP.includes(d.cp)) eotps.add(d.eotp); });
+      for (const e of eotps) {
+        const p = R.pose.find(x => x.eotp === e);
+        const pose = poseSap[e] != null ? poseSap[e] : (p ? p.qty : 0);
+        const dep = rows.filter(d => d.eotp === e).reduce((x, d) => x + (d.reel || 0), 0);
+        C.equilibre.push({ eotp: e, unit: p ? p.unit : (rows.find(d => d.eotp === e) || {}).unit === 'M' ? 'm' : 'u', pose, src: poseSap[e] != null ? 'SAP' : 'carto', dep, ok: Math.abs(pose - dep) < EPS });
+      }
+      // 3. abandon par famille : total en AB = surplus de la carto (dépose − pose renouvelée) + abandons hors carto
+      const fams = [...new Set(R.biens.map(b => b.chantier + '|' + b.fam).concat(rows.filter(d => d.cp === 'AB' && d.fam !== '?' && d.fam !== 'PDR').map(d => d.ch + '|' + d.fam)))];
+      for (const cf of fams) {
+        const [ch, fam] = cf.split('|');
+        const bs = R.biens.filter(b => b.chantier === ch && b.fam === fam);
+        const carto = bs.reduce((x, b) => x + b.cap - (b.manuel || 0), 0), man = bs.reduce((x, b) => x + (b.manuel || 0), 0);
+        const posee = R.pose.filter(p => p.chantier === ch && p.fam === fam && RENEW_CP.includes(p.cp)).reduce((x, p) => x + p.qty, 0);
+        const attendu = Math.max(0, r2(carto - posee)) + man;
+        const sap = rows.filter(d => d.ch === ch && d.fam === fam && d.cp === 'AB').reduce((x, d) => x + (d.reel || 0), 0);
+        C.abandon.push({ fam, label: TYPE_LABEL[fam], unit: fam === 'RES' ? 'm' : 'u', depose: carto, pose: posee, man, attendu, sap, ok: Math.abs(attendu - sap) < EPS });
+      }
+      // 4. dates de dépose : la plus récente « Etat de service depuis » de la carto
+      const dateCarto = {}; for (const b of R.biens) if (b.dateDep) dateCarto[b.key] = b.dateDep;
+      const norm8 = t => String(t || '').replace(/\./g, '/');
+      for (const d of rows) {
+        if (d.fam === 'PDR' || d.fam === '?' || !d.date) continue;
+        const att = dateCarto[bienKeyOf(d)];
+        if (att && norm8(d.date) !== att) C.dates.push({ eotp: d.eotp, label: d.fam === 'RES' ? `${d.mat} ${d.IN} ${d.annee}` : TYPE_LABEL[d.fam], sap: norm8(d.date), attendu: att });
+      }
+    }
+    out.nbControle = C.biens.filter(x => !x.ok).length + C.equilibre.filter(x => !x.ok).length + C.abandon.filter(x => !x.ok).length + C.dates.length + out.pose.filter(x => !x.ok).length;
     out.nbEcarts = out.pose.filter(x => !x.ok).length + out.depose.filter(x => !x.ok).length;
     return out;
   }
