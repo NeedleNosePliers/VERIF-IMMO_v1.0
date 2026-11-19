@@ -124,6 +124,7 @@
     voie: ['nom de la voie'],
     insee: ['code commune'],
     commune: ['nom de la commune'],
+    pression: ['niveau de pression'],
     eotpDepose: ['eotp ouvrage de depose'],
     eotpPose: ['eotp ouvrage de pose'],
     posteTech: ['n° poste technique', 'no poste technique', 'n poste technique', 'poste technique'],
@@ -169,6 +170,7 @@
         voie: String(get(r, 'voie') ?? ''),
         insee: String(get(r, 'insee') ?? ''),
         commune: String(get(r, 'commune') ?? ''),
+        pression: String(get(r, 'pression') ?? '').trim(),
         eotpDepose: String(get(r, 'eotpDepose') ?? '').trim(),
         eotpPose: String(get(r, 'eotpPose') ?? '').trim(),
         posteTech: String(get(r, 'posteTech') ?? ''),
@@ -441,6 +443,8 @@
       const p = poseMap[k] = poseMap[k] || { eotp: t.eotp, col: k, cp: t.cp, toCreate: t.toCreate, role, type: x.a.type, fam: fam(x.a.type), chantier: x.chantier, unit: unitOf(x.a.type), exact: 0, lines: [], brtPDR: false };
       p.exact += x.a.type === 'RES' ? (+x.a.longueur || 0) : 1;
       p.lines.push(x.uid); x.eotp = k;
+      p.dtMat = p.dtMat || new Set(); p.dtDiam = p.dtDiam || new Set(); p.dtPress = p.dtPress || new Set();
+      p.dtMat.add(MAT_SAP[x.a.matiere] || x.a.matiere); if (x.src.diam != null) p.dtDiam.add(+x.src.diam); if (x.src.pression) p.dtPress.add(x.src.pression.toUpperCase());
       p.insee = p.insee || inseeSAP(x.src.insee); p.commune = p.commune || String(x.src.commune || '').replace(/\s+\d+.*$/, '').toUpperCase();
       // date de mise en service réelle : « Etat de service depuis » (à défaut « Date d'installation ») du tableau de pose
       const dk = dateKey(x.src.etatDepuis) || dateKey(x.src.dateInst);
@@ -661,6 +665,11 @@
       if (state.orcVerified === false) add('orange', "Écran ORC lu sur capture : à vérifier par rapport à SAP puis cocher « Écran ORC vérifié » (onglet Captures SAP).");
       if (R.orc.nbControle) add('orange', `Contrôle de la saisie SAP (écran ORC) : ${R.orc.nbControle} point${R.orc.nbControle > 1 ? 's' : ''} à vérifier.`);
     }
+    {
+      R.dt = checkDt(R, state.dt);
+      if (state.dt && state.dt.length && state.dtVerified === false) add('orange', "Écrans Descr. tech. lus sur capture : à vérifier par rapport à SAP puis cocher « Écrans Descr. tech. vérifiés » (onglet Captures SAP).");
+      if (R.dt.nb) add('orange', `Contrôle de la saisie SAP (écrans Descr. tech., pose) : ${R.dt.nb} point${R.dt.nb > 1 ? 's' : ''} à vérifier.`);
+    }
 
     // 12. verdict
     const bad = controls.filter(c => c.level === 'rouge' || c.level === 'orange').length;
@@ -712,6 +721,78 @@
 
   // Comparaison écran ORC / répartition proposée (INSEE ignoré : la carto donne l'arrondissement, SAP la commune)
   const orcKey = (eotp, mat, IN, annee) => mat ? `${eotp}|${mat}|${IN}|${annee}` : `${eotp}|-`;
+  // écran « Afficher / Modifier élément OTP », onglet Descr. tech. (une capture par EOTP)
+  function parseDtText(text) {
+    const t = String(text || '');
+    const g = (re, f) => { const m = t.match(re); return m ? (f ? f(m) : m[1]) : null; };
+    const d8 = m => `${m[1]}/${m[2]}/${m[3]}`;
+    const DATE = '[^\\d\\n]{0,14}?(\\d{2})[.\\/,](\\d{2})[.\\/,](\\d{4})';
+    const out = {
+      dateMes: g(new RegExp('Date MES r[ée]elle' + DATE, 'i'), d8),
+      dateMesPrev: g(new RegExp('Date MES pr[ée]vi\\w*' + DATE, 'i'), d8),
+      dateCloture: g(new RegExp('cl[ôo]ture pr[ée]v' + DATE, 'i'), d8),
+      qte: g(/Qt[ée][ \t]*r[ée]elle[ \t]*\(?en serv\)?[ \t]*[\[(|]?[ \t]*([\d][\d .,]*)/i, m => numFr(m[1].trim())),
+      unite: g(/Unit[ée] mes\.?[ \t]*[\[(|]?[ \t]*([A-Z]{1,3})\b/i, m => m[1].toUpperCase()),
+      insee: g(/Code INSEE[ \t]*[\[(|]?[ \t]*(\d{5})/i),
+      codePlan: g(/Code Plan[ \t]*[\[(|]?[ \t]*([0-9]{2}|AB)\b/i),
+      codeMat: g(/Code mati[èe]re[ \t]*[\[(|]?[ \t]*([A-Z]{1,3})\b/i, m => m[1].toUpperCase()),
+      diametre: g(/Diam[èe]tre[ \t]*[\[(|]?[ \t]*([A-Z]{0,3}[ \t]?\d{2,4})/i, m => m[1].replace(/\s/g, '').toUpperCase()),
+      pression: g(/Pression pos[ée]e[ \t]*[\[(|]?[ \t]*([A-Z]{2,4})\b/i, m => m[1].toUpperCase()),
+      qtePrev: g(/Quantit[ée] pr[ée]v[ \t]*[\[(|]?[ \t]*([\d][\d .,]*)/i, m => numFr(m[1].trim())),
+      nat: g(/Nature d.ouvrage[ \t]*[\[(|]?[ \t]*([A-Z0-9]{4})\b/i, m => fixNat(m[1])),
+    };
+    // élément d'OTP : lecture directe, sinon n° d'affaire + Cx + code plan (rapproché ensuite des EOTP connus)
+    const line = (t.match(/El[ée]ment d.OTP[^\n]*/i) || [''])[0];
+    const tok = (line.replace(/El[ée]ment d.OTP/i, '').match(/[A-Za-z0-9][A-Za-z0-9=€\-–—_.]{12,}/) || [''])[0];
+    const clean = tok.replace(/€/g, 'C').replace(/[=_.–—]/g, '-');
+    if (out.diametre) { const m = out.diametre.match(/^(PE|AC|A|FD|FG)?(.+)$/); if (m) out.diametre = (m[1] || '') + m[2].replace(/O/g, '0').replace(/[IL]/g, '1'); }
+    out.eotpRaw = tok;
+    out.eotp = fixEotp(clean) || null;
+    if (out.eotp && !(parseEotpCode(out.eotp) || {}).elem) out.eotp = null;
+    out.affaire = (t.match(/(\d{7})/) || [])[1] || null;
+    out.chantierNo = (clean.match(/-C(\d{1,2})-/i) || [])[1] || null;
+    return out;
+  }
+  // rapproche une capture Descr. tech. d'un EOTP de pose ; contrôle les valeurs saisies
+  function checkDt(R, dts) {
+    const out = { rows: [], captures: [], nb: 0 };
+    if (!dts || !dts.length) return out;
+    const poseE = R.pose.filter(p => p.eotp);
+    for (const d of dts) {
+      let eotp = d.eotpChoisi || null, sure = !!d.eotpChoisi;
+      if (!eotp && d.eotp && poseE.some(p => p.eotp === d.eotp)) { eotp = d.eotp; sure = true; }
+      if (!eotp) {
+        const c = poseE.filter(p => (!d.affaire || p.eotp.includes(d.affaire)) && (!d.codePlan || p.cp === d.codePlan) && (!d.chantierNo || p.eotp.includes('-C' + d.chantierNo + '-')));
+        if (c.length === 1) eotp = c[0].eotp; else if (c.length) eotp = c[0].eotp;
+        sure = c.length === 1;
+      }
+      out.captures.push({ ...d, eotpRetenu: eotp, sure });
+    }
+    for (const p of poseE) {
+      const d = out.captures.find(x => x.eotpRetenu === p.eotp);
+      if (!d) { out.rows.push({ eotp: p.eotp, champ: 'Capture', attendu: '', sap: '', ok: null, info: 'pas de capture' }); continue; }
+      const push = (champ, attendu, sap, ok, info) => { out.rows.push({ eotp: p.eotp, champ, attendu, sap: sap == null ? '—' : sap, ok, info }); if (ok === false) out.nb++; };
+      if (!d.sure) push('Élément d\'OTP', p.eotp, d.eotpRaw || '?', false, 'EOTP lu sur la capture incertain : vérifiez');
+      push('Qté réelle (en serv)', fmtN(p.qty), d.qte == null ? null : fmtN(d.qte), d.qte != null && Math.abs(d.qte - p.qty) < EPS);
+      if (p.unit === 'm') push('Unité mes.', 'M', d.unite, d.unite === 'M');
+      push('Date MES réelle', p.dateMES || '', d.dateMes, !!d.dateMes && d.dateMes === p.dateMES);
+      if (!d.dateCloture) push('Date de clôture prév', 'ni le 1er ni le dernier jour du mois', null, false);
+      else {
+        const [dd, mm, yy] = d.dateCloture.split('/').map(Number);
+        const last = new Date(Date.UTC(yy, mm, 0)).getUTCDate();
+        push('Date de clôture prév', 'ni le 1er ni le dernier jour du mois', d.dateCloture, dd !== 1 && dd !== last);
+      }
+      if (d.codePlan) push('Code Plan', p.cp || '', d.codePlan, d.codePlan === p.cp);
+      const mats = [...(p.dtMat || [])], diams = [...(p.dtDiam || [])], press = [...(p.dtPress || [])];
+      if (d.codeMat && mats.length) push('Code matière', mats.join(' / '), d.codeMat, mats.includes(d.codeMat), 'information');
+      if (d.diametre && diams.length) { const n = +(d.diametre.match(/\d+/) || [0])[0]; push('Diamètre', diams.map(x => (mats[0] === 'PE' ? 'PE' : '') + String(x).padStart(3, '0')).join(' / '), d.diametre, diams.includes(n), 'information'); }
+      if (d.pression && press.length) push('Pression posée', press.join(' / '), d.pression, press.includes(d.pression), 'information');
+      if (d.nat && p.categorie) push('Nature d\'ouvrage', p.categorie, d.nat, d.nat === p.categorie, 'information');
+    }
+    return out;
+  }
+  const fmtN = n => String(r2(n)).replace('.', ',');
+
   function compareOrc(R, orc) {
     const out = { pose: [], depose: [], inventaire: [], cellMap: {}, poseMap: {} };
     if (!orc) return out;
@@ -809,6 +890,6 @@
     return out;
   }
 
-  const api = { compute, MAT_SAP, inseeSAP, diamTxt, LIB_MAT, parseOrcText, compareOrc, parseCarto, parseOcrText, fixEotp, parseEotpCode, classeIN, categorie, autoAttrs, typeOf, TYPE_LABEL, RENEW_CP, yearOf, norm, dateDisp };
+  const api = { compute, parseDtText, checkDt, MAT_SAP, inseeSAP, diamTxt, LIB_MAT, parseOrcText, compareOrc, parseCarto, parseOcrText, fixEotp, parseEotpCode, classeIN, categorie, autoAttrs, typeOf, TYPE_LABEL, RENEW_CP, yearOf, norm, dateDisp };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.VIEngine = api;
 })(typeof window !== 'undefined' ? window : globalThis);

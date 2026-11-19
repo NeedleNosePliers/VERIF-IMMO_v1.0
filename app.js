@@ -1,7 +1,7 @@
 /* VERIF-IMMO — interface. Tout est traité localement dans le navigateur. */
 (function () {
   'use strict';
-  const VERSION = '5.0';
+  const VERSION = '5.1';
   const APPNAME = 'VERIF-IMMO';
   const E = window.VIEngine;
   const STORE_KEY = 'verifimmo.v1';
@@ -190,7 +190,15 @@
         const { data } = await w.recognize(preprocess(img));
         // capture déposée dans la mauvaise zone : on la reconnaît à son contenu
         let tgt = target;
-        const looksOrc = /Description technique des EOTP|Qt[ée]\.? r[ée]elle|Qt[ée]\.? pr[ée]v|Date d[ée]p/i.test(data.text);
+        const looksDt = /Donn[ée]es de mise en service|\(en serv\)|Code Finalit[ée]|Pression pos[ée]e/i.test(data.text);
+        const looksOrc = !looksDt && /Description technique des EOTP|Qt[ée]\.? r[ée]elle|Qt[ée]\.? pr[ée]v|Date d[ée]p/i.test(data.text);
+        if (looksDt) {
+          const d = E.parseDtText(data.text);
+          a.dt = a.dt || [];
+          a.dt.push({ ...d, id: Date.now().toString(36) + i }); added++; usedTargets.add('dt');
+          if (target !== 'dt') toast('Capture reconnue comme l\'écran Descr. tech. : rangée dans la capture 3.');
+          continue;
+        }
         if (tgt === 'eotp' && looksOrc) { tgt = 'orc'; toast("Capture reconnue comme l'écran ORC : rangée dans la capture 2."); }
         else if (tgt === 'orc' && !looksOrc && E.parseOcrText(data.text).length) { tgt = 'eotp'; toast('Capture reconnue comme la structure du projet : rangée dans la capture 1.'); }
         usedTargets.add(tgt);
@@ -212,9 +220,11 @@
         }
       }
       if (usedTargets.has('orc')) a.orcVerified = false;
+      if (usedTargets.has('dt')) a.dtVerified = false;
       if (usedTargets.has('eotp')) a.eotpVerified = false;
       ui.ocr = null; touch(a); render();
       if (usedTargets.size === 1 && !usedTargets.has(target)) return; // le message de réorientation est déjà affiché
+      if (usedTargets.has('dt') && usedTargets.size === 1) { toast(`${added} écran(s) Descr. tech. lu(s). Vérifiez les valeurs lues puis cochez « Écrans Descr. tech. vérifiés ».`); return; }
       toast(usedTargets.has('orc') && !usedTargets.has('eotp') ? `${added} ligne(s) lue(s) sur l'écran ORC. Vérifiez puis cochez « Écran ORC vérifié ».` : `${added} EOTP ajouté(s). Vérifiez la liste puis cochez « Liste vérifiée ».`);
     } catch (e) {
       console.error(e); ui.ocr = null; render(); toast('Lecture impossible : ' + e.message);
@@ -267,7 +277,7 @@
     const lv = c => R && R.controls.some(x => x.level === c);
     const tabs = [
       ['fichiers', '1. Fichiers carto', (a.pose && a.depose) ? 'ok' : 'rouge'],
-      ['eotp', '2. Captures SAP', a.eotps.length ? ((a.eotpVerified !== false && a.orcVerified !== false) ? 'ok' : 'orange') : 'rouge'],
+      ['eotp', '2. Captures SAP', a.eotps.length ? ((a.eotpVerified !== false && a.orcVerified !== false && a.dtVerified !== false) ? 'ok' : 'orange') : 'rouge'],
       ['resultat', '3. Répartition', R ? (lv('rouge') ? 'rouge' : lv('orange') ? 'orange' : 'ok') : ''],
       ['troncons', '4. Tronçons', ''],
       ['export', '5. Forçages & export', '']
@@ -327,7 +337,28 @@
       <p class="small muted">Les lignes sont dans le même ordre que dans SAP. Comparez chaque ligne avec l'écran SAP et corrigez si besoin (+ insère une ligne en dessous, ↑ ↓ déplacent). Les EOTP sont toujours écrits en entier (ex : RV4-0000000-1-C1-22-I01).</p>
       ${a.eotps.length ? `<div class="tw"><table><thead><tr><th>Élément d'OTP</th><th>Désignation</th><th>Niveau</th><th>CP</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
       <label class="row" style="margin-top:12px;font-weight:600;cursor:pointer"><input type="checkbox" id="eotpOk" ${a.eotpVerified ? 'checked' : ''} style="width:20px;height:20px"> Liste vérifiée par rapport à SAP</label>` : '<p class="muted">Aucun EOTP pour l\'instant.</p>'}
-      </div>${renderOrcInput(a)}<div class="row"><button class="btn" data-tab="resultat">Voir le résultat →</button></div>`;
+      </div>${renderOrcInput(a)}${renderDtInput(a)}<div class="row"><button class="btn" data-tab="resultat">Voir le résultat →</button></div>`;
+  }
+
+  // ----- 2 ter. Écrans élément d'OTP, onglet Descr. tech. (pose) -----
+  function renderDtInput(a) {
+    const R = ui.R || null;
+    const dts = a.dt || [];
+    const caps = R && R.dt ? R.dt.captures : [];
+    const poseE = R ? R.pose.filter(p => p.eotp).map(p => p.eotp) : [];
+    const inp = (i, f, v, w) => `<input class="t" style="min-width:${w || 70}px" data-dt="${i}:${f}" value="${esc(v ?? '')}">`;
+    const rows = dts.map((d, i) => {
+      const c = caps.find(x => x.id === d.id) || {};
+      const sel = `<select data-dt="${i}:eotpChoisi"><option value="">${esc(c.eotpRetenu ? c.eotpRetenu + (c.sure ? '' : ' (à vérifier)') : 'EOTP non reconnu')}</option>${poseE.map(e => `<option value="${esc(e)}" ${d.eotpChoisi === e ? 'selected' : ''}>${esc(e)}</option>`).join('')}</select>`;
+      return `<tr><td>${sel}<div class="small muted">lu : ${esc(d.eotpRaw || '—')}</div></td><td>${inp(i, 'qte', d.qte == null ? '' : fmt(d.qte))}</td><td>${inp(i, 'unite', d.unite, 40)}</td><td>${inp(i, 'dateMes', d.dateMes, 95)}</td><td>${inp(i, 'dateCloture', d.dateCloture, 95)}</td><td>${inp(i, 'codePlan', d.codePlan, 40)}</td><td>${inp(i, 'codeMat', d.codeMat, 40)}</td><td>${inp(i, 'diametre', d.diametre, 60)}</td><td>${inp(i, 'pression', d.pression, 50)}</td><td><button class="btn sm danger" data-dtdel="${i}">✕</button></td></tr>`;
+    }).join('');
+    return `<div class="card"><div class="row"><h2 class="grow" style="margin:0">Capture 3 — Écran élément d'OTP, onglet « Descr. tech. » (pose) <span class="small muted">(au choix)</span></h2>
+        ${dts.length ? '<button class="btn sm danger" id="dtClear">Vider</button>' : ''}</div>
+      <p class="small muted">Une capture par EOTP de pose, après saisie. L'appli contrôle la saisie face à la carto (onglet Répartition).</p>
+      <label class="drop" id="dropDt" data-paste="dt"><b>Déposer / coller les captures « Descr. tech. » ici</b><br><span class="small">ou cliquer pour choisir</span>
+        <input type="file" id="inDt" accept="image/*" multiple hidden></label>
+      ${dts.length ? `<div class="tw"><table><thead><tr><th>Élément d'OTP</th><th>Qté réelle (en serv)</th><th>Unité mes.</th><th>Date MES réelle</th><th>Date de clôture prév</th><th>Code Plan</th><th>Code matière</th><th>Diamètre</th><th>Pression posée</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+      <label class="row" style="margin-top:12px;font-weight:600;cursor:pointer"><input type="checkbox" id="dtOk" ${a.dtVerified ? 'checked' : ''} style="width:20px;height:20px"> Écrans Descr. tech. vérifiés par rapport à SAP</label>` : ''}</div>`;
   }
 
   // ----- 2 bis. Écran ORC -----
@@ -358,6 +389,17 @@
     for (const x of C.abandon) out.push(['Abandon (AB) = surplus', x.label, `${q(x.attendu, x.unit)} (${x.depose > x.pose ? `dépose ${q(x.depose, x.unit)} − pose ${q(x.pose, x.unit)}` : 'pas de surplus dans la carto'}${x.man ? ' + ' + x.man + ' hors carto' : ''})`, q(x.sap, x.unit), st(x.ok)]);
     for (const x of C.dates) out.push(['Date réelle dép/ab', `${x.eotp} — ${x.label}`, x.attendu, x.sap, 'à vérifier']);
     return out;
+  }
+  function dtRows(R) {
+    if (!R.dt || !R.dt.captures.length) return [];
+    return R.dt.rows.map(r => [r.eotp, r.champ, r.attendu, r.sap, r.ok === null ? (r.info || '') : r.ok ? 'conforme' : (r.info === 'information' ? 'différent de la carto (information)' : 'à vérifier')]);
+  }
+  function renderDtCheck(R) {
+    const rows = dtRows(R); if (!rows.length) return '';
+    const pill = t => t === 'conforme' ? `<span class="pill" style="background:var(--green-l);color:#2f6b10">${t}</span>` : t === 'pas de capture' ? `<span class="pill none">${t}</span>` : `<span class="pill" style="background:var(--orange-l);color:var(--orange)">${esc(t)}</span>`;
+    return `<div class="card"><h2>Contrôle de la saisie SAP — pose (écrans Descr. tech.)</h2>
+      <p class="small muted">Valeurs lues sur les captures, face à la carto. Code matière, diamètre, pression et nature d'ouvrage : pour information (données de l'EOTP, pas forcément saisies par le CA). Date de clôture prév : règle du pas-à-pas (Document1) « éviter 1er du mois et fin de mois ».</p>
+      <div class="tw"><table><thead><tr><th>Elément d'OTP</th><th>Champ</th><th>Attendu (carto)</th><th>Saisi dans SAP</th><th>Statut</th></tr></thead><tbody>${rows.map(r => `<tr><td>${esc(r[0])}</td><td>${esc(r[1])}</td><td>${esc(r[2])}</td><td><b>${esc(r[3])}</b></td><td>${pill(r[4])}</td></tr>`).join('')}</tbody></table></div></div>`;
   }
   function renderOrcCompare(R) {
     if (!R.orc) return '';
@@ -530,7 +572,10 @@
     // valeurs à saisir dans SAP (écran ORC)
     // valeurs à saisir, dans la disposition de l'écran ORC
     const sapNum = (q, u) => fmt(q, u === 'm' ? 2 : 0);
-    const sapPose = R.pose.filter(p => p.qty > 0).map(p => `<tr><td>${esc(p.col)}</td><td>${esc(p.insee || '')}</td><td class="num"><b>${sapNum(p.qty, p.unit)}</b></td><td>${p.unit === 'm' ? 'M' : 'PCE'}</td><td>${esc(p.categorie)}</td><td>${esc(p.dateMES || '')}</td></tr>`).join('');
+    // pose : écran élément d'OTP, onglet Descr. tech. (un EOTP à la fois), dans l'ordre de la liste SAP
+    const ordreSap = c => { const k = (cur().eotps || []).findIndex(e => e.code === String(c).split(' ')[0]); return k < 0 ? 999 : k; };
+    const dtRef = p => { const mats = [...(p.dtMat || [])], diams = [...(p.dtDiam || [])].sort((x, y) => x - y); return { mat: mats.join(' / '), diam: diams.map(d => (mats[0] === 'PE' ? 'PE' : '') + String(d).padStart(3, '0')).join(' / '), press: [...(p.dtPress || [])].join(' / ') }; };
+    const sapPose = R.pose.filter(p => p.qty > 0).sort((x, y) => ordreSap(x.col) - ordreSap(y.col)).map(p => { const r = dtRef(p); return `<tr><td>${esc(p.col)}</td><td>${esc(p.insee || '')}</td><td><b>${esc(p.dateMES || '')}</b></td><td class="num"><b>${sapNum(p.qty, p.unit)}</b></td><td>${p.unit === 'm' ? 'M' : 'PCE'}</td><td class="muted small">ni le 1er ni le dernier jour du mois</td><td>${esc(p.cp || '')}</td><td>${esc(r.mat)}</td><td>${esc(r.diam)}</td><td>${esc(r.press)}</td><td>${esc(p.categorie)}</td></tr>`; }).join('');
     const sapDep = R.sapDepose.map(s => `<tr><td>${esc(s.insee)}</td><td>${esc(s.commune)}</td><td>${esc(s.col)}</td><td>${esc(s.categorie)}</td><td class="wrap">${esc(s.designation)}</td><td>${esc(s.mat)}</td><td>${esc(s.IN)}</td><td>${esc(s.libMat)}</td><td>${esc(s.diamTxt)}</td><td class="num">${esc(s.annee)}</td><td class="num"><b>${sapNum(s.qty, s.unit)}</b></td><td>${s.unit === 'm' ? 'M' : 'PCE'}</td><td>${esc(s.date || '')}</td></tr>`).join('');
     return `<div class="verdict ${ok ? 'ok' : 'ko'}"><span class="grow">${ok ? '✔' : '✖'} ${esc(R.verdict)}</span>
         ${isForced(vk) ? `<span class="forced small">forcé (auto : ${esc(R.autoVerdict)})</span>` : ''}
@@ -541,12 +586,12 @@
       <p class="small muted" style="margin:0 2px 10px">Répartition : chaque EOTP de renouvellement reçoit en dépose la quantité posée. Le surplus de dépose part en abandon sur le ou les biens que vous choisissez (colonne AB) ; une fois le surplus placé, le reste est réparti sur les EOTP de renouvellement (CP 22 puis CP 23, du plus ancien au plus récent) ; la pose en tranchée sans dépose en face part en CP 15. Mètres arrondis au-dessus. Toutes les cases sont modifiables ; ↺ revient à la proposition.</p>
       ${groups(R).map(g => renderMatrix(a, R, g)).join('')}
       ${renderAbManual(a, R)}
-      <div class="card"><h2>Valeurs à saisir dans SAP (écran ORC)</h2>
-        <p class="small muted">Mêmes colonnes et même ordre que l'écran ORC « Dépose des immobilisations ». Dépose d'ouvrage : supprimer les lignes proposées par SAP, puis créer une ligne par ligne ci-dessous.</p>
-        <h3>Description technique des EOTP</h3><div class="tw"><table><thead><tr><th>Elément d'OTP</th><th>INSEE</th><th class="num">Quantité réelle</th><th>Un.</th><th>Nat. Ouvr</th><th>Date MES réelle</th></tr></thead><tbody>${sapPose || '<tr><td colspan="6" class="muted">—</td></tr>'}</tbody></table></div>
-        <h3>Dépose</h3><div class="tw"><table><thead><tr><th>INSEE</th><th>Désignation</th><th>Elément d'OTP</th><th>Nat. Ouvr</th><th>Désignation</th><th>Mat déposé</th><th>Code diam.</th><th>Libellé matière</th><th>Diamètre ext</th><th class="num">Année d'origine MES</th><th class="num">Qté réelle dép/ab</th><th>Unité</th><th>Date réelle dep/ab</th></tr></thead><tbody>${sapDep || '<tr><td colspan="13" class="muted">—</td></tr>'}</tbody></table></div>
+      <div class="card"><h2>Valeurs à saisir dans SAP</h2>
+        <p class="small muted">Pose : écran élément d'OTP (CJ02), onglet « Descr. tech. ». Dépose : écran ORC « Dépose des immobilisations », mêmes colonnes et même ordre ; supprimer les lignes proposées par SAP, puis créer une ligne par ligne ci-dessous.</p>
+        <h3>Pose — écran élément d'OTP, onglet « Descr. tech. » (un EOTP à la fois, flèche « suivant »)</h3><p class="small muted">En gras : les valeurs à saisir. Date de clôture prév : à choisir, en évitant le 1er et le dernier jour du mois. Les autres colonnes, tirées de la carto, servent à vérifier l'écran.</p><div class="tw"><table><thead><tr><th>Elément d'OTP</th><th>Code INSEE</th><th>Date MES réelle</th><th class="num">Qté réelle (en serv)</th><th>Unité mes.</th><th>Date de clôture prév</th><th>Code Plan</th><th>Code matière</th><th>Diamètre</th><th>Pression posée</th><th>Nature d'ouvrage</th></tr></thead><tbody>${sapPose || '<tr><td colspan="11" class="muted">—</td></tr>'}</tbody></table></div>
+        <h3>Dépose — écran ORC « Dépose des immobilisations »</h3><div class="tw"><table><thead><tr><th>INSEE</th><th>Désignation</th><th>Elément d'OTP</th><th>Nat. Ouvr</th><th>Désignation</th><th>Mat déposé</th><th>Code diam.</th><th>Libellé matière</th><th>Diamètre ext</th><th class="num">Année d'origine MES</th><th class="num">Qté réelle dép/ab</th><th>Unité</th><th>Date réelle dep/ab</th></tr></thead><tbody>${sapDep || '<tr><td colspan="13" class="muted">—</td></tr>'}</tbody></table></div>
         ${renderEcartSAP(R)}</div>
-      ${renderOrcCompare(R)}
+      ${renderOrcCompare(R)}${renderDtCheck(R)}
       <div class="card"><div class="row"><h2 class="grow" style="margin:0">PDR</h2><button class="btn sm sec" id="pdrAdd">+ Ajouter un PDR</button></div>
         ${R.pdr.length ? `<div class="tw"><table><thead><tr><th>PDR</th><th>EOTP</th><th>Nature</th><th>Catégorie</th><th>Origine</th></tr></thead><tbody>${pdrRows}</tbody></table></div>` : '<p class="muted">Aucun PDR.</p>'}</div>`;
   }
@@ -686,6 +731,19 @@
     document.querySelectorAll('[data-orcdel]').forEach(b => b.onclick = () => { const [t, idx] = b.dataset.orcdel.split(':'); a.orc[t === 'e' ? 'eotpRows' : 'deposeRows'].splice(+idx, 1); touch(a); render(); });
     const oc = $('#orcClear'); if (oc) oc.onclick = () => confirmBox("Vider les données lues sur l'écran ORC ?", () => { a.orc = null; delete a.orcVerified; touch(a); render(); }, 'Vider');
     const ook = $('#orcOk'); if (ook) ook.onchange = () => { a.orcVerified = ook.checked; touch(a); render(); };
+    const ddt = $('#dropDt'), idt = $('#inDt');
+    if (ddt) { dropify(ddt, files => handleImages(files, 'dt')); idt.onchange = e => handleImages(e.target.files, 'dt'); }
+    document.querySelectorAll('[data-dt]').forEach(i => i.onchange = () => {
+      const [idx, f] = i.dataset.dt.split(':'); const d = a.dt[+idx];
+      let v = i.value.trim();
+      if (f === 'qte') { const n = parseFloat(v.replace(/\s/g, '').replace(',', '.')); v = isFinite(n) ? n : null; }
+      else if (f === 'dateMes' || f === 'dateCloture') v = v.replace(/\./g, '/');
+      else v = v.toUpperCase();
+      d[f] = v || (f === 'qte' ? v : null); touch(a); render();
+    });
+    document.querySelectorAll('[data-dtdel]').forEach(b => b.onclick = () => { a.dt.splice(+b.dataset.dtdel, 1); touch(a); render(); });
+    const dc = $('#dtClear'); if (dc) dc.onclick = () => confirmBox('Vider les écrans Descr. tech. lus ?', () => { a.dt = []; delete a.dtVerified; touch(a); render(); }, 'Vider');
+    const dok = $('#dtOk'); if (dok) dok.onchange = () => { a.dtVerified = dok.checked; touch(a); render(); };
     const di = $('#dropImg'), ii = $('#inImg');
     if (di) { dropify(di, files => handleImages(files)); ii.onchange = e => handleImages(e.target.files); }
     document.querySelectorAll('[data-eotp-code]').forEach(i => i.onchange = () => { const e = a.eotps[+i.dataset.eotpCode]; e.code = i.value.trim().toUpperCase(); touch(a); render(); });
@@ -821,13 +879,14 @@
       ['Verdict', R.verdict + (a.forces.VERDICT ? ' (forcé, auto : ' + R.autoVerdict + ')' : '')], [], ['Niveau', 'Contrôle'], ...R.controls.map(c => [c.level, c.msg])], [18, 120]);
     add('Bilan', [['', 'Total pose', 'Total dépose', 'Ecart pose / dépose', 'Unité', 'Lecture'], ...bilan(R).map(x => [x.label, x.pose, x.dep, sapSigned(x.ecart), x.unit === 'm' ? 'M' : 'PCE', sensDiff(x)])], [30, 12, 12, 20, 6, 60]);
     add('Répartition', matrixAoa(R), [30, 10, 11, 26, 26, 26, 26, 26, 10]);
-    add('ORC - Description technique', [['Elément d\'OTP', 'INSEE', 'Quantité réelle', 'Un.', 'Nat. Ouvr', 'Date MES réelle'], ...R.pose.filter(p => p.qty > 0).map(p => [p.col, p.insee || '', p.qty, p.unit === 'm' ? 'M' : 'PCE', p.categorie, p.dateMES || ''])], [28, 8, 14, 5, 10, 14]);
+    add('Pose - Descr. tech.', [['Elément d\'OTP', 'Code INSEE', 'Date MES réelle', 'Qté réelle (en serv)', 'Unité mes.', 'Date de clôture prév', 'Code Plan', 'Nature d\'ouvrage'], ...R.pose.filter(p => p.qty > 0).map(p => [p.col, p.insee || '', p.dateMES || '', p.qty, p.unit === 'm' ? 'M' : 'PCE', 'ni le 1er ni le dernier jour du mois', p.cp || '', p.categorie])], [28, 10, 14, 16, 8, 30, 8, 12]);
     add('ORC - Dépose', [['INSEE', 'Désignation', 'Elément d\'OTP', 'Nat. Ouvr', 'Désignation', 'Mat déposé', 'Code diam.', 'Libellé matière', 'Diamètre ext', 'Année d\'origine MES', 'Qté réelle dép/ab', 'Unité', 'Date réelle dep/ab'],
       ...R.sapDepose.map(s => [s.insee, s.commune, s.col, s.categorie, s.designation, s.mat, s.IN, s.libMat, s.diamTxt, s.annee, s.qty, s.unit === 'm' ? 'M' : 'PCE', s.date || ''])], [8, 12, 28, 9, 34, 10, 10, 14, 16, 12, 14, 6, 14]);
     add('PDR', [['PDR', 'EOTP', 'Nature', 'Catégorie', 'Origine'], ...R.pdr.map(p => [p.pdr, p.eotp, p.nature, p.categorie, p.auto ? 'détecté SAP' : 'manuel'])], [18, 28, 10, 10, 12]);
     add('Tronçons pose', [LINE_HDR, ...lineRows(R, 'pose')], [6, 12, 26, 12, 8, 7, 5, 6, 10, 9, 7, 30, 7]);
     add('Tronçons dépose', [LINE_HDR, ...lineRows(R, 'depose')], [6, 12, 26, 12, 8, 7, 5, 6, 10, 9, 7, 30, 7]);
     add('EOTP SAP', [['Élément d\'OTP', 'Désignation'], ...a.eotps.map(e => [e.code, e.designation])], [30, 50]);
+    if (dtRows(R).length) add('Contrôle pose Descr. tech.', [['Elément d\'OTP', 'Champ', 'Attendu (carto)', 'Saisi dans SAP', 'Statut'], ...dtRows(R)], [28, 22, 34, 16, 30]);
     if (R.orc) add('Contrôle saisie SAP', [['Contrôle', 'Élément', 'Attendu (carto)', 'Saisi dans SAP', 'Statut'], ...controleRows(R)], [36, 40, 34, 16, 18]);
     if (R.orc) add('Lignes ORC', [['Tableau', 'EOTP', 'Désignation', 'Mat.', 'IN', 'Année', 'Qté prév.', 'Qté réelle SAP', 'App', 'Statut'],
       ...R.orc.pose.map(x => ['Pose', x.eotp, x.nat || '', '', '', '', x.prev, x.reel, x.app, statut(x)]),
@@ -886,9 +945,10 @@
         g.biens.map(b => [b.label, b.virtuel ? '—' : fmt(b.exact), fmt(b.cap), ...g.cols.map(c => fmt(b.cells[c.col] || 0)), fmt(b.reste)])
           .concat([['Dépose par EOTP', '', '', ...g.cols.map(c => fmt(tot(c).depose)), ''], ['Pose par EOTP', '', '', ...g.cols.map(c => c.cp === 'AB' ? '—' : fmt(tot(c).pose)), '']]));
     }
-    tbl('Valeurs à saisir dans SAP — Description technique des EOTP', ['Elément d\'OTP', 'INSEE', 'Quantité réelle', 'Un.', 'Nat. Ouvr', 'Date MES réelle'], R.pose.filter(p => p.qty > 0).map(p => [p.col, p.insee || '', fmt(p.qty), p.unit === 'm' ? 'M' : 'PCE', p.categorie, p.dateMES || '']));
+    tbl('Valeurs à saisir dans SAP — Pose (élément d\'OTP, onglet Descr. tech.)', ['Elément d\'OTP', 'Code INSEE', 'Date MES réelle', 'Qté réelle (en serv)', 'Unité mes.', 'Date de clôture prév', 'Code Plan', 'Nature d\'ouvrage'], R.pose.filter(p => p.qty > 0).map(p => [p.col, p.insee || '', p.dateMES || '', fmt(p.qty), p.unit === 'm' ? 'M' : 'PCE', 'ni le 1er ni le dernier du mois', p.cp || '', p.categorie]));
     tbl('Valeurs à saisir dans SAP — Dépose', ['INSEE', 'Désignation', 'Elément d\'OTP', 'Nat. Ouvr', 'Désignation', 'Mat', 'Code diam.', 'Libellé matière', 'Diamètre ext', 'Année MES', 'Qté réelle dép/ab', 'Unité', 'Date réelle dep/ab'],
       R.sapDepose.map(s => [s.insee, s.commune, s.col, s.categorie, s.designation, s.mat, s.IN, s.libMat, s.diamTxt, s.annee, fmt(s.qty), s.unit === 'm' ? 'M' : 'PCE', s.date || '']), { styles: { fontSize: 6.5, cellPadding: 1 } });
+    if (dtRows(R).length) tbl('Contrôle de la saisie SAP — pose (écrans Descr. tech.)', ['Elément d\'OTP', 'Champ', 'Attendu (carto)', 'Saisi dans SAP', 'Statut'], dtRows(R));
     if (R.orc) tbl('Contrôle de la saisie SAP (écran ORC)', ['Contrôle', 'Élément', 'Attendu (carto)', 'Saisi dans SAP', 'Statut'], controleRows(R));
     if (R.orc) tbl("Comparaison avec l'écran ORC", ['Tableau', 'EOTP', 'Désignation', 'Mat.', 'IN', 'Année', 'Qté prév.', 'Qté réelle SAP', 'Proposition', 'Statut'],
       R.orc.pose.map(x => ['Pose', x.eotp, x.nat || '', '', '', '', x.prev ?? '—', x.reel ?? '—', x.app, statut(x)])
