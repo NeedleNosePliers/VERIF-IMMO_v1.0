@@ -510,12 +510,16 @@
       add('info', `${surplus} m de réseau posé en tranchée sans dépose en face : proposés en CP 15 restructuration (${t15.eotp || t15.proposed + ', élément à créer'}).`);
     }
 
-    // 5. répartition automatique (règle tirée des fiches de correction des CA) :
-    //    les EOTP de renouvellement puisent dans les biens du plus ancien au plus récent, CP 22 (fouille) d'abord puis CP 23 (tubage) ;
-    //    chaque EOTP reçoit en dépose la quantité posée ; ce qui reste des biens les plus récents part en abandon
+    // 5. répartition : chaque EOTP de renouvellement reçoit en dépose sa quantité posée.
+    //    Le surplus de dépose (dépose > pose) part en abandon : c'est le CA qui choisit sur quel(s) bien(s) ;
+    //    l'app ne le place elle-même que s'il n'y a qu'un bien possible. Une fois le surplus placé,
+    //    le reste des biens est réparti sur les EOTP de renouvellement (CP 22 puis CP 23, du plus ancien au plus récent).
     const infoBrt = new Set();
     const rankRole = r => r === 'RES_HT' ? 0 : r === 'RES_TUB' ? 1 : 2;
     const abMan = state.abManual || {}; // abandons hors carto saisis par le CA (branchements, CI, CM)
+    const isAbCol = col => { const pc = parseEotpCode(col.split(' ')[0]); return pc ? pc.cp === 'AB' : /\bAB\b/.test(col); };
+    const forcedOf = b => { const o = {}; const pre = 'REP:' + b.key + '|'; for (const k of Object.keys(forces)) if (k.startsWith(pre)) o[k.slice(pre.length)] = +forces[k].value || 0; return o; };
+    const famWord = (F, n) => F === 'RES' ? `${fr(n)} m` : `${n} ${F === 'CI' || F === 'CM' ? 'ouvrage' : 'branchement'}${n > 1 ? 's' : ''}`;
     const chList = [...new Set(pose.map(p => p.chantier).concat(biens.map(b => b.chantier)).concat(chantiers.slice(0, 1)))];
     for (const ch of chList) {
       for (const F of ['RES', 'BI', 'BC', 'CI', 'CM']) {
@@ -523,29 +527,43 @@
         const bs = biens.filter(b => b.chantier === ch && b.fam === F);
         const ps = pose.filter(p => p.chantier === ch && p.fam === F);
         if (!bs.length && !ps.length && !nMan) continue;
-        const rem = {};
-        bs.forEach(b => { rem[b.key] = b.cap; });
-        const take = (b, col, q) => { if (q <= 0) return 0; b.auto[col] = (b.auto[col] || 0) + q; rem[b.key] -= q; return q; };
-        const oldestFirst = (x, y) => (+x.annee || 9999) - (+y.annee || 9999) || y.cap - x.cap;
-        for (const p of ps.slice().sort((x, y) => rankRole(x.role) - rankRole(y.role))) {
-          if (p.cp === '15' || p.role === 'RES_RS') continue; // CP 15 : réseau nouveau, sans dépose
-          let need = p.qty;
-          for (const b of bs.slice().sort(oldestFirst)) need -= take(b, p.col, Math.min(need, rem[b.key]));
-          // aucune dépose de ce type (carto + saisie du CA) : on n'invente rien, dépose 0
-          if (F !== 'RES' && !bs.length && p.qty > 0)
-            infoBrt.add(`${TYPE_LABEL[F]} : aucune dépose dans la carto — dépose 0. Si des branchements ont été déposés, les saisir dans « Abandons hors carto ».`);
-        }
-        // abandons hors carto saisis par le CA (branchements, CI, CM) : ajoutés au bien du type, en abandon (fiche Cristol : 6 BRI hors carto en AB)
+        if (F !== 'RES' && !bs.length && !nMan && ps.some(p => p.qty > 0))
+          infoBrt.add(`${TYPE_LABEL[F]} : aucune dépose dans la carto — dépose 0. Si des branchements ont été abandonnés, les saisir dans « Abandons hors carto ».`);
+        // abandons hors carto : ajoutés au bien du type, ils partent en abandon (fiche Cristol : 6 BRI hors carto en AB)
+        let manB = null;
         if (nMan) {
           const key = `${ch}|${F}`;
-          let b = bs.find(x => x.key === key);
-          if (!b) { b = { key, chantier: ch, type: F, fam: F, mat: '', IN: '', annee: '', insee: '', unit: 'u', exact: 0, exactTube: 0, lines: [], cap: 0, tubeCap: 0, label: TYPE_LABEL[F], cells: {}, auto: {}, virtuel: true }; biens.push(b); bs.push(b); rem[key] = 0; }
-          b.cap += nMan; rem[key] += nMan; b.manuel = nMan;
+          manB = bs.find(x => x.key === key);
+          if (!manB) { manB = { key, chantier: ch, type: F, fam: F, mat: '', IN: '', annee: '', insee: '', unit: 'u', exact: 0, exactTube: 0, lines: [], cap: 0, tubeCap: 0, label: TYPE_LABEL[F], cells: {}, auto: {}, virtuel: true }; biens.push(manB); bs.push(manB); }
+          manB.cap += nMan; manB.manuel = nMan;
         }
-        // reste des biens -> AB
-        const tAB = bs.some(b => rem[b.key] > 0) ? target(ch, F, true) : null;
-        for (const b of bs) if (rem[b.key] > 0) take(b, tAB.col, rem[b.key]);
-        if (tAB) bs.forEach(b => { b.abCol = tAB.col; });
+        if (!bs.length) continue;
+        const renew = ps.filter(p => !(p.cp === '15' || p.role === 'RES_RS')).sort((x, y) => rankRole(x.role) - rankRole(y.role));
+        const tAB = target(ch, F, true);
+        bs.forEach(b => { b.abCol = tAB.col; });
+        const fo = {}, rem = {};
+        bs.forEach(b => { fo[b.key] = forcedOf(b); rem[b.key] = b.cap - Object.values(fo[b.key]).reduce((x, y) => x + y, 0); });
+        const take = (b, col, q) => { if (q <= 0 || fo[b.key][col] != null) return 0; b.auto[col] = (b.auto[col] || 0) + q; rem[b.key] -= q; return q; };
+        const capTot = bs.reduce((x, b) => x + b.cap, 0);
+        const poseTot = renew.reduce((x, p) => x + p.qty, 0);
+        const surplus = r2(capTot - nMan - poseTot); // carto seule ; les abandons hors carto vont en AB à part
+        if (manB) take(manB, tAB.col, Math.min(nMan, rem[manB.key]));
+        let surplusLeft = surplus;
+        const forcedAB = bs.reduce((x, b) => x + Object.entries(fo[b.key]).filter(([c]) => isAbCol(c)).reduce((y, [, v]) => y + v, 0), 0);
+        surplusLeft = r2(surplusLeft - forcedAB);
+        const choix = bs.filter(b => rem[b.key] > 0);
+        if (surplusLeft > 0 && choix.length === 1) { take(choix[0], tAB.col, Math.min(surplusLeft, rem[choix[0].key])); surplusLeft = 0; }
+        if (surplusLeft > 0) {
+          // le CA choisit le(s) bien(s) abandonné(s) : rien n'est réparti tant que le surplus n'est pas placé
+          bs.forEach(b => { if (b.auto[tAB.col] == null) b.auto[tAB.col] = 0; });
+          add('orange', `${TYPE_LABEL[F] || 'Réseau'} : ${famWord(F, surplusLeft)} de dépose de plus que la pose, à mettre en abandon (${tAB.col}). Saisissez dans la colonne abandon le ou les biens concernés ; le reste se répartira ensuite sur les EOTP de renouvellement.`, 'fam:' + F);
+          continue;
+        }
+        for (const p of renew) {
+          let need = p.qty - bs.reduce((x, b) => x + (fo[b.key][p.col] || 0), 0);
+          for (const b of bs.slice().sort((x, y) => (+x.annee || 9999) - (+y.annee || 9999) || y.cap - x.cap)) need -= take(b, p.col, Math.min(need, rem[b.key]));
+        }
+        if (surplus < 0) add('info', `${TYPE_LABEL[F] || 'Réseau'} : ${famWord(F, -surplus)} de pose de plus que la dépose (hors CP 15).`);
       }
     }
     infoBrt.forEach(m => add('info', m));
@@ -576,7 +594,7 @@
     // consigne explicite d'abandon
     for (const b of biens) {
       const ab = b.abCol && b.cells[b.abCol];
-      if (ab > 0) add('info', `Affecter ${b.unit === 'm' ? fr(ab) + ' m' : ab + ' ' + (b.type === 'CI' || b.type === 'CM' ? 'ouvrage' : 'branchement') + (ab > 1 ? 's' : '')} d'abandon à ${b.abCol} — ${b.label}.`);
+      if (ab > 0 && b.auto[b.abCol] > 0) add('info', `Affecter ${b.unit === 'm' ? fr(ab) + ' m' : ab + ' ' + (b.type === 'CI' || b.type === 'CM' ? 'ouvrage' : 'branchement') + (ab > 1 ? 's' : '')} d'abandon à ${b.abCol} — ${b.label}.`);
     }
 
     // 7. totaux par colonne (EOTP) et test ±10 % sur les EOTP de renouvellement (VERIF_IMMO, SAISIE SAP - VERIF, colonne V)

@@ -1,7 +1,7 @@
 /* VERIF-IMMO — interface. Tout est traité localement dans le navigateur. */
 (function () {
   'use strict';
-  const VERSION = '4.10';
+  const VERSION = '4.11';
   const APPNAME = 'VERIF-IMMO';
   const E = window.VIEngine;
   const STORE_KEY = 'verifimmo.v1';
@@ -479,7 +479,7 @@
       return { label: FAM_LABEL[g.fam] + (R.chantiers.length > 1 ? ' — ' + g.ch : ''), unit: g.fam === 'RES' ? 'm' : 'u', pose, dep, diff: dep - pose, ecart: pose - dep };
     });
   }
-  const sensDiff = x => x.diff > 0 ? `${fmtQ(x.diff, x.unit)} de dépose en plus → abandon` : x.diff < 0 ? `${fmtQ(-x.diff, x.unit)} de pose en plus → pose sans dépose (CP 15 pour le réseau)` : 'équilibré';
+  const sensDiff = x => x.diff > 0 ? `surplus : ${fmtQ(x.diff, x.unit)} de dépose en plus → abandon, sur le(s) bien(s) de votre choix` : x.diff < 0 ? `${fmtQ(-x.diff, x.unit)} de pose en plus que la dépose` : 'équilibré';
   function renderBilan(R) {
     const rows = bilan(R).map(x => `<tr><td><b>${esc(x.label)}</b></td><td class="num">${fmtQ(x.pose, x.unit)}</td><td class="num">${fmtQ(x.dep, x.unit)}</td>
       <td class="num"><b>${sapSigned(x.ecart)}${x.unit === 'm' ? ' M' : ' PCE'}</b></td><td>${esc(sensDiff(x))}</td></tr>`).join('');
@@ -523,7 +523,7 @@
       <div style="margin-top:14px">${renderBilan(R)}</div>
       <div class="card"><h2>Schéma de l'affaire</h2>${renderSchema(R)}</div>
       <div class="card"><h2>Contrôles</h2>${ctls || '<p class="muted">Aucun point à signaler.</p>'}</div>
-      <p class="small muted" style="margin:0 2px 10px">Répartition proposée : chaque EOTP de renouvellement reçoit en dépose la quantité posée, en puisant dans les biens du plus ancien au plus récent (CP 22 d'abord, puis CP 23) ; le reste des biens les plus récents part en abandon ; la pose en tranchée sans dépose en face part en CP 15. Mètres arrondis au-dessus. Toutes les cases sont modifiables ; ↺ revient à la proposition.</p>
+      <p class="small muted" style="margin:0 2px 10px">Répartition : chaque EOTP de renouvellement reçoit en dépose la quantité posée. Le surplus de dépose part en abandon sur le ou les biens que vous choisissez (colonne AB) ; une fois le surplus placé, le reste est réparti sur les EOTP de renouvellement (CP 22 puis CP 23, du plus ancien au plus récent) ; la pose en tranchée sans dépose en face part en CP 15. Mètres arrondis au-dessus. Toutes les cases sont modifiables ; ↺ revient à la proposition.</p>
       ${groups(R).map(g => renderMatrix(a, R, g)).join('')}
       ${renderAbManual(a, R)}
       <div class="card"><h2>Valeurs à saisir dans SAP (écran ORC)</h2>
@@ -617,7 +617,7 @@
       <h3>Répartition (onglet 3)</h3><ol>
       <li><b>Pose par EOTP</b> : réseau posé en tubage (technique de pose contenant « Tubage ») → CP 23 ; autre réseau → CP 22 ; branchements individuels (courant, GC) → CP 25 ; collectifs → CP 26. Longueur installée, arrondie au mètre supérieur.</li>
       <li><b>Biens déposés</b> : la dépose de la carto est regroupée par bien (matière, classe IN, année), comme dans l'écran ORC. Dépose tubée = Abandonné avec « Longueur SIG » = 0 ou vide.</li>
-      <li><b>Proposition</b> : chaque EOTP de renouvellement reçoit en dépose la quantité posée, en puisant dans les biens <b>du plus ancien au plus récent</b>, CP 22 d'abord puis CP 23. Ce qui reste des biens les plus récents part en <b>abandon</b> (élément AB). Règle vérifiée sur la fiche de correction de l'affaire Cristol.</li>
+      <li><b>Proposition</b> : chaque EOTP de renouvellement reçoit en dépose la quantité posée, Le <b>surplus</b> de dépose (dépose − pose) part en <b>abandon</b> (élément AB) : c'est le CA qui choisit le ou les biens abandonnés, en saisissant la colonne AB. L'app ne le place seule que s'il n'y a qu'un bien possible. Une fois le surplus placé, le reste des biens est réparti sur les EOTP de renouvellement, CP 22 d'abord puis CP 23, du plus ancien au plus récent.</li>
       <li>Le CA contrôle et modifie toutes les cases (pose et dépose) ; ↺ revient à la proposition. Le reste à répartir de chaque bien doit être nul.</li>
       <li><b>CP 15</b> (restructuration) : <b>pose en tranchée sans dépose</b>. La pose en fouille qui dépasse la dépose disponible est proposée en CP 15 ; la pose en fouille qui remplace un réseau déposé (conversion de pression, changement de diamètre, ex. PE 32 remplacé par PE 63) reste en CP 22. Toute autre colonne peut être ajoutée (« + Ajouter une colonne »).</li>
       <li>Classes de diamètre externe, comme l'écran ORC : PE : IN1 &lt; 100 ; IN2 ≥ 100 et &lt; 200 ; IN3 ≥ 200. Autres matières (fonte, acier) : IN1 &lt; 80 ; IN2 ≥ 80 et &lt; 200 ; IN3 ≥ 200.</li></ol>
