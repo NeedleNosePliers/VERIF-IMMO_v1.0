@@ -1,7 +1,7 @@
 /* VERIF-IMMO — interface. Tout est traité localement dans le navigateur. */
 (function () {
   'use strict';
-  const VERSION = '6.1';
+  const VERSION = '6.2';
   const APPNAME = 'VERIF-IMMO';
   const E = window.VIEngine;
   const STORE_KEY = 'verifimmo.v1';
@@ -434,7 +434,7 @@
   }
   function renderDtCheck(R) {
     const rows = dtRows(R); if (!rows.length) return '';
-    const pill = t => t === 'conforme' ? `<span class="pill" style="background:var(--green-l);color:#2f6b10">${t}</span>` : (t === 'pas de capture' || /^non lue/.test(t)) ? `<span class="pill none">${esc(t)}</span>` : `<span class="pill" style="background:var(--orange-l);color:var(--orange)">${esc(t)}</span>`;
+    const pill = t => t === 'conforme' ? `<span class="pill" style="background:var(--green-l);color:#2f6b10">${t}</span>` : (t === 'pas de capture' || /^non lue|^pas encore saisi/.test(t)) ? `<span class="pill none">${esc(t)}</span>` : `<span class="pill" style="background:var(--orange-l);color:var(--orange)">${esc(t)}</span>`;
     return `<div class="card"><h2>Contrôle de la saisie SAP — pose (écrans Descr. tech.)</h2>
       <p class="small muted">Valeurs lues sur les captures, face à la carto. Code matière, diamètre et pression : pour information (données de l'EOTP, pas forcément saisies par le CA). Date de clôture prév : règle du pas-à-pas (Document1) « éviter 1er du mois et fin de mois ».</p>
       <div class="tw"><table><thead><tr><th>Elément d'OTP</th><th>Champ</th><th>Attendu (carto)</th><th>Saisi dans SAP</th><th>Statut</th></tr></thead><tbody>${rows.map(r => `<tr><td>${esc(r[0])}</td><td>${esc(r[1])}</td><td>${esc(r[2])}</td><td><b>${esc(r[3])}</b></td><td>${pill(r[4])}</td></tr>`).join('')}</tbody></table></div></div>`;

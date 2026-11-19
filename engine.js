@@ -772,11 +772,13 @@
       const d = out.captures.find(x => x.eotpRetenu === p.eotp);
       if (!d) { out.rows.push({ eotp: p.eotp, champ: 'Capture', attendu: '', sap: '', ok: null, info: 'pas de capture' }); continue; }
       const push = (champ, attendu, sap, ok, info) => { out.rows.push({ eotp: p.eotp, champ, attendu, sap: sap == null ? '—' : sap, ok, info }); if (ok === false) out.nb++; };
+      // champ vide sur la capture (capture prise avant la saisie) : valeur à saisir, pas une erreur
+      const aSaisir = (champ, attendu) => out.rows.push({ eotp: p.eotp, champ, attendu, sap: '—', ok: null, info: 'pas encore saisi : à saisir' });
       if (!d.sure) push('Élément d\'OTP', p.eotp, d.eotpRaw || '?', false, 'EOTP lu sur la capture incertain : vérifiez');
-      push('Qté réelle (en serv)', fmtN(p.qty), d.qte == null ? null : fmtN(d.qte), d.qte != null && Math.abs(d.qte - p.qty) < EPS);
+      if (d.qte == null) aSaisir('Qté réelle (en serv)', fmtN(p.qty)); else push('Qté réelle (en serv)', fmtN(p.qty), fmtN(d.qte), Math.abs(d.qte - p.qty) < EPS);
       if (p.unit === 'm') push('Unité mes.', 'M', d.unite, d.unite === 'M');
-      push('Date MES réelle', p.dateMES || '', d.dateMes, !!d.dateMes && d.dateMes === p.dateMES);
-      if (!d.dateCloture) push('Date de clôture prév', 'ni le 1er ni le dernier jour du mois', null, false);
+      if (!d.dateMes) aSaisir('Date MES réelle', p.dateMES || ''); else push('Date MES réelle', p.dateMES || '', d.dateMes, d.dateMes === p.dateMES);
+      if (!d.dateCloture) aSaisir('Date de clôture prév', 'ni le 1er ni le dernier jour du mois');
       else {
         const [dd, mm, yy] = d.dateCloture.split('/').map(Number);
         const last = new Date(Date.UTC(yy, mm, 0)).getUTCDate();
