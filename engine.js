@@ -285,7 +285,12 @@
       // désignation = jusqu'au dernier jeton « type » reconnu
       const toks = rest.split(/\s+/);
       let cut = -1, type = '';
-      for (let i = toks.length - 1; i >= 0; i--) {
+      // d'abord : jeton « type » suivi de la colonne « Pr. » (H) — sûr même si d'autres colonnes ou une fenêtre suivent
+      for (let i = 1; i < toks.length - 1; i++) {
+        const t = toks[i].toUpperCase().replace(/[^A-Z0-9]/g, '');
+        if ((TYPE_TOKENS[t] || /^[A-Za-zœ]{1,3}$/.test(toks[i])) && /^[A-ZÀŒ]{0,2}H$/i.test(toks[i + 1])) { cut = i; type = TYPE_TOKENS[t] || ''; break; }
+      }
+      if (cut < 0) for (let i = toks.length - 1; i >= 0; i--) {
         const t = toks[i].toUpperCase().replace(/[^A-Z0-9]/g, '');
         if (TYPE_TOKENS[t] && i > 0) { cut = i; type = TYPE_TOKENS[t]; break; }
       }
