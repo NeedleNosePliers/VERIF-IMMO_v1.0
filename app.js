@@ -1,7 +1,7 @@
 /* VERIF-IMMO — interface. Tout est traité localement dans le navigateur. */
 (function () {
   'use strict';
-  const VERSION = '6.6';
+  const VERSION = '6.7';
   const APPNAME = 'VERIF-IMMO';
   const E = window.VIEngine;
   const STORE_KEY = 'verifimmo.v1';
@@ -197,8 +197,17 @@
           // fenêtre « Afficher / Modifier élément OTP » à côté de la synthèse des EOTP : chaque partie est relue seule
           const words = [];
           for (const bl of data.blocks || []) for (const pa of bl.paragraphs || []) for (const li of pa.lines || []) for (const wd of li.words || []) words.push(wd);
+          // bord gauche de la fenêtre : titre « Afficher/Modifier élément OTP », « Définition de projet », « Données de mise en service », « Code INSEE »
           let x0 = null;
-          for (let k = 0; k < words.length - 1; k++) if (/^(Afficher|Modifier|Cr[ée]er)$/i.test(words[k].text) && /^[ée]l[ée]ment$/i.test(words[k + 1].text) && words[k].bbox.x0 > cv.width * 0.2) x0 = words[k].bbox.x0;
+          const right = x => x > cv.width * 0.3;
+          const anchor = x => { if (right(x)) x0 = x0 == null ? x : Math.min(x0, x); };
+          for (let k = 0; k < words.length - 1; k++) {
+            const t1 = words[k].text, t2 = words[k + 1].text, bx = words[k].bbox.x0;
+            if (/^(Afficher|Modifier|Cr[ée]er)$/i.test(t1) && /^[ée]l[ée]ment/i.test(t2)) anchor(bx);
+            else if (/^D[ée]finition$/i.test(t1) && /^de$/i.test(t2)) anchor(bx);
+            else if (/^Donn[ée]es$/i.test(t1) && /^de$/i.test(t2)) anchor(bx);
+            else if (/^Code$/i.test(t1) && /^INSEE$/i.test(t2)) anchor(bx);
+          }
           let dtText = data.text, dtData = data, dtCv = cv;
           const crop = (xa, xb) => { const c = document.createElement('canvas'); c.width = xb - xa; c.height = cv.height; c.getContext('2d').drawImage(cv, xa, 0, c.width, c.height, 0, 0, c.width, c.height); return c; };
           if (x0 != null) {
@@ -218,6 +227,15 @@
               if (n) { usedTargets.add('eotp'); added += n; }
             }
           }
+          if (x0 == null && /Synth[èe]se des [EF]OTP/i.test(data.text)) {
+            let n = 0;
+            for (const r of E.parseOcrText(data.text)) {
+              const ex = a.eotps.find(e => e.code === r.code);
+              if (ex) continue;
+              a.eotps.push({ code: r.code, designation: r.designation, src: 'capture' }); n++;
+            }
+            if (n) { usedTargets.add('eotp'); added += n; }
+          }
           let d = E.parseDtText(dtText);
           // champ « Nature d'ouvrage » (ligne à boutons, souvent sautée) : relu seul, sous « Gestion. Nature d'ouvrage »
           if (!d.nat) {
@@ -235,8 +253,10 @@
             }
           }
           a.dt = a.dt || [];
-          // élément AB : pas de pose à saisir, seule la liste des EOTP de la capture est utile
+          // l'élément affiché dans la fenêtre complète la liste des EOTP s'il y manque
           const pc = E.parseEotpCode(d.eotp || '');
+          if (pc && pc.elem && !a.eotps.some(e => e.code === d.eotp)) { a.eotps.push({ code: d.eotp, designation: '', src: 'capture' }); usedTargets.add('eotp'); }
+          // élément AB : pas de pose à saisir, seule la liste des EOTP de la capture est utile
           if ((pc && pc.cp === 'AB') || d.codePlan === 'AB') { usedTargets.add('dt'); continue; }
           // même EOTP capturé de nouveau : la nouvelle capture remplace l'ancienne
           if (d.eotp) a.dt = a.dt.filter(x => x.eotp !== d.eotp);
