@@ -1,7 +1,7 @@
 /* VERIF-IMMO — interface. Tout est traité localement dans le navigateur. */
 (function () {
   'use strict';
-  const VERSION = '6.9';
+  const VERSION = '6.10';
   const APPNAME = 'VERIF-IMMO';
   const E = window.VIEngine;
   const STORE_KEY = 'verifimmo.v1';
@@ -184,6 +184,7 @@
       const w = await getWorker((st, p) => { if (ui.ocr) { ui.ocr.status = st === 'recognizing text' ? 'Lecture du texte…' : 'Chargement du moteur de lecture…'; ui.ocr.p = p; updOcr(); } });
       let added = 0;
       const usedTargets = new Set();
+      const bilanDt = { ok: 0, ab: [], rempl: [], illisible: [] };
       for (let i = 0; i < imgs.length; i++) {
         const { img, url } = await loadImg(imgs[i]);
         ui.ocr.thumbs.push(url); ui.ocr.status = `Lecture de la capture ${i + 1}/${imgs.length}…`; render();
@@ -257,10 +258,12 @@
           const pc = E.parseEotpCode(d.eotp || '');
           if (pc && pc.elem && !a.eotps.some(e => e.code === d.eotp)) { a.eotps.push({ code: d.eotp, designation: '', src: 'capture' }); usedTargets.add('eotp'); }
           // élément AB : pas de pose à saisir, seule la liste des EOTP de la capture est utile
-          if ((pc && pc.cp === 'AB') || d.codePlan === 'AB') { usedTargets.add('dt'); continue; }
-          // même EOTP capturé de nouveau : la nouvelle capture remplace l'ancienne
-          if (d.eotp) a.dt = a.dt.filter(x => x.eotp !== d.eotp);
-          a.dt.push({ ...d, id: Date.now().toString(36) + i }); added++; usedTargets.add('dt');
+          const fname = imgs[i].name || `capture ${i + 1}`;
+          if ((pc && pc.cp === 'AB') || d.codePlan === 'AB') { usedTargets.add('dt'); bilanDt.ab.push(d.eotp || fname); continue; }
+          // même EOTP capturé de nouveau : la nouvelle capture remplace l'ancienne (signalé)
+          if (d.eotp && a.dt.some(x => x.eotp === d.eotp)) { bilanDt.rempl.push(d.eotp); a.dt = a.dt.filter(x => x.eotp !== d.eotp); }
+          if (!d.eotp) bilanDt.illisible.push(fname);
+          a.dt.push({ ...d, fichier: fname, id: Date.now().toString(36) + i }); added++; usedTargets.add('dt'); bilanDt.ok++;
           
           continue;
         }
@@ -288,7 +291,15 @@
       if (usedTargets.has('dt')) a.dtVerified = false;
       if (usedTargets.has('eotp')) a.eotpVerified = false;
       ui.ocr = null; touch(a); render();
-      if (usedTargets.has('dt') && usedTargets.size === 1) { toast(`${added} écran(s) Descr. tech. lu(s). Vérifiez les valeurs lues puis cochez « Écrans Descr. tech. vérifiés ».`); return; }
+      if (usedTargets.has('dt')) {
+        const m = [`${imgs.length} capture(s) : ${bilanDt.ok} écran(s) de pose ajouté(s)`];
+        if (bilanDt.ab.length) m.push(`${bilanDt.ab.length} élément(s) AB non ajouté(s) (pas de pose à saisir)`);
+        if (bilanDt.rempl.length) m.push(`déjà présent(s), remplacé(s) : ${bilanDt.rempl.join(', ')}`);
+        if (bilanDt.illisible.length) m.push(`EOTP illisible : ${bilanDt.illisible.join(', ')}`);
+        ui.dtBilan = m.join(' — ');
+        toast(m.join(' — '));
+        return;
+      }
       toast(usedTargets.has('orc') && !usedTargets.has('eotp') ? `${added} ligne(s) lue(s) sur l'écran ORC. Vérifiez puis cochez « Écran ORC vérifié ».` : `${added} EOTP ajouté(s). Vérifiez la liste puis cochez « Liste vérifiée ».`);
     } catch (e) {
       console.error(e); ui.ocr = null; render(); toast('Lecture impossible : ' + e.message);
@@ -422,11 +433,12 @@
       const c = caps.find(x => x.id === d.id) || {};
       const why = { pasDeCarto: 'EOTP non reconnu : fichiers carto pas encore chargés', pasDeListe: 'EOTP non reconnu : liste des EOTP vide', codeIllisible: 'EOTP non reconnu : code illisible sur la capture, choisissez-le', absentListe: 'EOTP non reconnu : ' + (d.eotp || '') + ' absent de la liste des EOTP' }[c.raison] || 'EOTP non reconnu';
       const sel = `<select data-dt="${i}:eotpChoisi"><option value="">${esc(c.eotpRetenu ? c.eotpRetenu + (c.sure ? '' : ' (à vérifier)') : why)}</option>${elemE.map(e => `<option value="${esc(e)}" ${d.eotpChoisi === e ? 'selected' : ''}>${esc(e)}${poseE.includes(e) ? '' : ' (sans pose carto)'}</option>`).join('')}</select>${c.raison === 'sansPose' ? '<div class="small muted">aucune pose dans la carto pour cet EOTP</div>' : c.raison === 'pasDeCarto' && c.eotpRetenu ? '<div class="small muted">fichiers carto pas encore chargés : rien à comparer</div>' : ''}`;
-      return `<tr><td>${sel}<div class="small muted">lu : ${esc(d.eotpRaw || '—')}</div></td><td>${inp(i, 'qte', d.qte == null ? '' : fmt(d.qte))}</td><td>${inp(i, 'unite', d.unite, 40)}</td><td>${inp(i, 'dateMes', d.dateMes, 95)}</td><td>${inp(i, 'dateCloture', d.dateCloture, 95)}</td><td>${inp(i, 'codePlan', d.codePlan, 40)}</td><td>${inp(i, 'codeMat', d.codeMat, 40)}</td><td>${inp(i, 'diametre', d.diametre, 60)}</td><td>${inp(i, 'pression', d.pression, 50)}</td><td>${inp(i, 'nat', d.nat, 55)}</td><td><button class="btn sm danger" data-dtdel="${i}">✕</button></td></tr>`;
+      return `<tr><td>${sel}<div class="small muted">lu : ${esc(d.eotpRaw || '—')}${d.fichier ? ' — ' + esc(d.fichier) : ''}</div></td><td>${inp(i, 'qte', d.qte == null ? '' : fmt(d.qte))}</td><td>${inp(i, 'unite', d.unite, 40)}</td><td>${inp(i, 'dateMes', d.dateMes, 95)}</td><td>${inp(i, 'dateCloture', d.dateCloture, 95)}</td><td>${inp(i, 'codePlan', d.codePlan, 40)}</td><td>${inp(i, 'codeMat', d.codeMat, 40)}</td><td>${inp(i, 'diametre', d.diametre, 60)}</td><td>${inp(i, 'pression', d.pression, 50)}</td><td>${inp(i, 'nat', d.nat, 55)}</td><td><button class="btn sm danger" data-dtdel="${i}">✕</button></td></tr>`;
     }).join('');
     if (!dts.length) return '';
     return `<div class="card"><div class="row"><h2 class="grow" style="margin:0">Description technique et Données de base — écrans « Afficher élément OTP », onglet « Descr. tech. » lus (pose)</h2>
         ${dts.length ? '<button class="btn sm danger" id="dtClear">Vider</button>' : ''}</div>
+      ${ui.dtBilan ? `<p class="small" style="margin:6px 0"><b>Dernier dépôt :</b> ${esc(ui.dtBilan)}</p>` : ''}
 
       ${dts.length ? `<div class="tw"><table><thead><tr><th>Élément d'OTP</th><th>Qté réelle (en serv)</th><th>Unité mes.</th><th>Date MES réelle</th><th>Date de clôture prév</th><th>Code Plan</th><th>Code matière</th><th>Diamètre</th><th>Pression posée</th><th>Nature d'ouvrage</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
       <label class="row" style="margin-top:12px;font-weight:600;cursor:pointer"><input type="checkbox" id="dtOk" ${a.dtVerified ? 'checked' : ''} style="width:20px;height:20px"> Écrans Descr. tech. vérifiés par rapport à SAP</label>` : ''}</div>`;

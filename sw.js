@@ -1,5 +1,5 @@
 /* VERIF-IMMO — fonctionnement hors ligne. Changer VERSION à chaque mise à jour de l'appli. */
-const VERSION = '6.9';
+const VERSION = '6.10';
 const CACHE = 'verif-immo-' + VERSION;
 const FILES = [
   './', 'index.html', `style.css?v=${VERSION}`, `engine.js?v=${VERSION}`, `app.js?v=${VERSION}`,

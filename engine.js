@@ -682,7 +682,7 @@
 
   // ---------- Écran SAP « ORC – Dépose des immobilisations » ----------
   const numFr = v => { const n = parseFloat(String(v).replace(/\s/g, '').replace(',', '.')); return isFinite(n) ? n : null; };
-  const fixNat = n => { let t = String(n).toUpperCase().replace(/[^A-Z0-9]/g, ''); const q = t.match(/^([A-Z])([0-9OIL]{2})([EF])$/); if (q) t = q[1] + q[2].replace(/O/g, '0').replace(/[IL]/g, '1') + q[3]; const m = t.match(/^([A-Z])[A-Z]?(\d{2}[EF])$/); return m ? m[1] + m[2] : t; };
+  const fixNat = n => { let t = String(n).toUpperCase().replace(/[^A-Z0-9]/g, ''); const q = t.match(/^([A-Z])([0-9OILS]{2})([EF])$/); if (q) t = q[1] + q[2].replace(/O/g, '0').replace(/[IL]/g, '1').replace(/S/g, '5') + q[3]; const m = t.match(/^([A-Z])[A-Z]?(\d{2}[EF])$/); return m ? m[1] + m[2] : t; };
   const fixIN = t => { const m = String(t).toUpperCase().match(/^IN([1-3IL])$/); return m ? 'IN' + m[1].replace(/[IL]/, '1') : null; };
   // texte lu -> { eotpRows (tableau « Description technique des EOTP »), deposeRows (tableau « Dépose ») }
   function parseOrcText(text) {
