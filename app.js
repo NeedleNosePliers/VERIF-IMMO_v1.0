@@ -1,7 +1,7 @@
 /* VERIF-IMMO — interface. Tout est traité localement dans le navigateur. */
 (function () {
   'use strict';
-  const VERSION = '6.7';
+  const VERSION = '6.8';
   const APPNAME = 'VERIF-IMMO';
   const E = window.VIEngine;
   const STORE_KEY = 'verifimmo.v1';
@@ -785,7 +785,7 @@
       <li><b>Export</b> : PDF / Excel avec la trace des forçages, sauvegarde de l'affaire.</li></ol>
       <h3>Répartition (onglet 3)</h3><ol>
       <li><b>Pose par EOTP</b> : réseau posé en tubage (technique de pose contenant « Tubage ») → CP 23 ; autre réseau → CP 22 ; branchements individuels (courant, GC) → CP 25 ; collectifs → CP 26. Longueur installée, arrondie au mètre supérieur.</li>
-      <li><b>Biens déposés</b> : la dépose de la carto est regroupée par bien (matière, classe IN, année), comme dans l'écran ORC. Dépose tubée = Abandonné avec « Longueur SIG » = 0 ou vide.</li>
+      <li><b>Biens déposés</b> : la dépose de la carto est regroupée par bien (matière, classe IN, année), comme dans l'écran ORC. Tronçon tubé (pose comme dépose) = « Technique de pose » contient « Tubage ».</li>
       <li><b>Proposition</b> : chaque EOTP de renouvellement reçoit en dépose la quantité posée, Le <b>surplus</b> de dépose (dépose − pose) part en <b>abandon</b> (élément AB) : c'est le CA qui choisit le ou les biens abandonnés, en saisissant la colonne AB. L'app ne le place seule que s'il n'y a qu'un bien possible. Une fois le surplus placé, le reste des biens est réparti sur les EOTP de renouvellement, CP 22 d'abord puis CP 23, du plus ancien au plus récent.</li>
       <li>Le CA contrôle et modifie toutes les cases (pose et dépose) ; ↺ revient à la proposition. Le reste à répartir de chaque bien doit être nul.</li>
       <li><b>CP 15</b> (restructuration) : <b>pose en tranchée sans dépose</b>. La pose en fouille qui dépasse la dépose disponible est proposée en CP 15 ; la pose en fouille qui remplace un réseau déposé (conversion de pression, changement de diamètre, ex. PE 32 remplacé par PE 63) reste en CP 22. Toute autre colonne peut être ajoutée (« + Ajouter une colonne »).</li>

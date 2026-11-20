@@ -219,11 +219,8 @@
     // branchement rattaché à un poste technique de branchement collectif (…-BRC…) : compté en collectif (fiche de correction Cristol)
     if (type === 'BI' && /-BRC\d/i.test(l.posteTech || '')) type = 'BC';
     if (type === 'BC' && /-BRI\d/i.test(l.posteTech || '')) type = 'BI';
-    const k = l.lSig == null ? 0 : l.lSig; // K vide = 0
-    const abandonne = /abandon/.test(norm(l.etat));
-    const tubage = type === 'RES' && (kind === 'pose'
-      ? /tubage/.test(norm(l.technique))
-      : (abandonne && Math.abs(k) < EPS));
+    // tubage : colonne « Technique de pose » de la carto, en pose comme en dépose (demande du CA, remplace la règle VERIF_IMMO « Abandonné + longueur SIG 0 »)
+    const tubage = type === 'RES' && /tubage/.test(norm(l.technique));
     return {
       type,
       matiere: matiereSAP(l.materiau),
