@@ -1,7 +1,7 @@
 /* VERIF-IMMO — interface. Tout est traité localement dans le navigateur. */
 (function () {
   'use strict';
-  const VERSION = '6.5';
+  const VERSION = '6.6';
   const APPNAME = 'VERIF-IMMO';
   const E = window.VIEngine;
   const STORE_KEY = 'verifimmo.v1';
@@ -235,6 +235,11 @@
             }
           }
           a.dt = a.dt || [];
+          // élément AB : pas de pose à saisir, seule la liste des EOTP de la capture est utile
+          const pc = E.parseEotpCode(d.eotp || '');
+          if ((pc && pc.cp === 'AB') || d.codePlan === 'AB') { usedTargets.add('dt'); continue; }
+          // même EOTP capturé de nouveau : la nouvelle capture remplace l'ancienne
+          if (d.eotp) a.dt = a.dt.filter(x => x.eotp !== d.eotp);
           a.dt.push({ ...d, id: Date.now().toString(36) + i }); added++; usedTargets.add('dt');
           
           continue;

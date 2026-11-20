@@ -732,7 +732,7 @@
       dateMesPrev: g(new RegExp('Date MES pr[ée]vi\\w*' + DATE, 'i'), d8),
       dateCloture: g(new RegExp('cl[ôo]ture pr[ée]v' + DATE, 'i'), d8),
       qte: g(/Qt[ée][ \t]*r[ée]elle[ \t]*\(?en serv\)?[ \t]*[\[(|]?[ \t]*([\d][\d .,]*)/i, m => numFr(m[1].trim())),
-      unite: g(/Unit[ée] mes\.?[ \t]*[\[(|]?[ \t]*([A-Z]{1,3})\b/i, m => m[1].toUpperCase()),
+      unite: g(/Unit[ée] mes(?!ure)\.?[ \t]*[\[(|]?[ \t]*([A-Z]{1,3})\b/i, m => m[1].toUpperCase()),
       insee: g(/Code INSEE[ \t]*[\[(|]?[ \t]*(\d{5})/i),
       codePlan: g(/Code Plan[ \t]*[\[(|]?[ \t]*([0-9]{2}|AB)\b/i),
       codeMat: g(/Code mati[èe]re[ \t]*[\[(|]?[ \t]*([A-Z]{1,3})\b/i, m => m[1].toUpperCase()),
