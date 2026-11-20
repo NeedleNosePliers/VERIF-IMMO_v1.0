@@ -1,7 +1,7 @@
 /* VERIF-IMMO — interface. Tout est traité localement dans le navigateur. */
 (function () {
   'use strict';
-  const VERSION = '6.10';
+  const VERSION = '6.11';
   const APPNAME = 'VERIF-IMMO';
   const E = window.VIEngine;
   const STORE_KEY = 'verifimmo.v1';
@@ -724,6 +724,18 @@
     if (f.fam && x.a.type !== f.fam) return false;
     return true;
   }
+  // additions de la dépose : même matière, même classe IN, même année (= un bien, comme l'écran ORC)
+  function totauxDepose(R) {
+    const bs = R.biens.filter(b => !b.virtuel || b.exact).slice().sort((x, y) => (x.type === 'RES' ? 0 : 1) - (y.type === 'RES' ? 0 : 1) || String(x.mat).localeCompare(String(y.mat)) || String(x.IN).localeCompare(String(y.IN)) || (+x.annee || 0) - (+y.annee || 0));
+    if (!bs.length) return '';
+    const u = b => b.unit === 'm' ? ' m' : '';
+    const rows = bs.map(b => `<tr><td>${esc(b.type === 'RES' ? 'Réseau' : E.TYPE_LABEL[b.type])}</td><td>${esc(b.mat || '')}</td><td>${esc(b.IN || '')}</td><td>${esc(b.annee || '')}</td><td class="num">${(b.lines || []).length}</td><td class="num">${fmt(b.exact)}${u(b)}</td><td class="num"><b>${fmt(b.cap)}${u(b)}</b></td><td class="num">${b.exactTube ? fmt(b.exactTube) + u(b) : '—'}</td></tr>`).join('');
+    const res = bs.filter(b => b.type === 'RES');
+    const tot = res.length ? `<tr><td colspan="4"><b>Total réseau</b></td><td class="num">${res.reduce((x, b) => x + (b.lines || []).length, 0)}</td><td class="num">${fmt(res.reduce((x, b) => x + b.exact, 0))} m</td><td class="num"><b>${fmt(res.reduce((x, b) => x + b.cap, 0))} m</b></td><td class="num">${fmt(res.reduce((x, b) => x + b.exactTube, 0))} m</td></tr>` : '';
+    return `<h3>Additions : même matière, même IN, même année</h3>
+      <p class="small muted">Lignes non ignorées. « À saisir » = somme arrondie au mètre supérieur, quantité du bien dans l'écran ORC.</p>
+      <div class="tw" style="max-width:820px"><table><thead><tr><th>Type</th><th>Matière</th><th>IN</th><th>Année</th><th class="num">Tronçons</th><th class="num">Somme long. inst.</th><th class="num">À saisir</th><th class="num">dont tubé</th></tr></thead><tbody>${rows}${tot}</tbody></table></div>`;
+  }
   function renderTroncons(a, R) {
     if (!R.lines.length) return `<div class="card"><p>Aucun tronçon : chargez les fichiers carto.</p></div>`;
     const f = ui.filter;
@@ -736,7 +748,7 @@
         const id = x.src.id, k = fld => `L:${kind}:${id}:${fld}`;
         const sp = (fld, label, type, options) => { forceSpecs[k(fld)] = { key: k(fld), label: `${kind === 'pose' ? 'Pose' : 'Dépose'} — Id SIG ${id} — ${label}`, auto: x.auto[fld], type, options }; };
         sp('type', 'type', 'select', typeOpts); sp('matiere', 'matière', 'select', [['(PE)', '(PE)'], ['(Ac)', '(Ac)'], ['(Autre)', '(Autre)']]);
-        sp('IN', 'classe IN', 'select', [['IN1', 'IN1 (< 80 mm)'], ['IN2', 'IN2 (80 à < 200 mm)'], ['IN3', 'IN3 (≥ 200 mm)']]);
+        sp('IN', 'classe IN', 'select', [['IN1', 'IN1 (PE < 100 mm ; autres < 80 mm)'], ['IN2', 'IN2 (PE 100 à < 200 ; autres 80 à < 200 mm)'], ['IN3', 'IN3 (≥ 200 mm)']]);
         sp('annee', 'année', 'number'); sp('longueur', 'longueur installée (m)', 'number'); sp('tubage', 'tubage', 'bool');
         sp('brtPDR', 'branchement de PDR (catégorie P21E)', 'bool'); sp('ignore', 'ignorer la ligne', 'bool');
         const yr = kind === 'pose' ? E.dateDisp(x.src.etatDepuis) : E.dateDisp(x.src.dateInst);
@@ -759,7 +771,7 @@
     return `${f ? `<div class="filterbar"><span>Filtre : ${esc(describeFilter(f))}</span><button class="btn sm sec" id="clrFilter">Tout afficher</button></div>` : ''}
       <p class="small muted">Détail des tronçons de la carto. ✎ = corriger une valeur de la carto (type, matière, IN, année, longueur, tubage…) ; la répartition se recalcule.</p>
       <div class="card"><h2>Pose <span class="small muted">(${esc(a.pose ? a.pose.fileName : 'aucun fichier')})</span></h2>${a.pose ? table('pose') : '<p class="muted">—</p>'}</div>
-      <div class="card"><h2>Dépose <span class="small muted">(${esc(a.depose ? a.depose.fileName : 'aucun fichier')})</span></h2>${a.depose ? table('depose') : '<p class="muted">—</p>'}</div>`;
+      <div class="card"><h2>Dépose <span class="small muted">(${esc(a.depose ? a.depose.fileName : 'aucun fichier')})</span></h2>${a.depose ? table('depose') + totauxDepose(R) : '<p class="muted">—</p>'}</div>`;
   }
   function describeFilter(f) {
     const p = [];
