@@ -493,7 +493,7 @@
       b.exact = r2(b.exact); b.exactTube = r2(b.exactTube);
       b.cap = ceilQ(b.exact, b.unit);
       b.tubeCap = Math.min(b.cap, ceilQ(b.exactTube, b.unit));
-      const dn = b.diams && b.diams.size ? ` — DN ${[...b.diams].sort((x, y) => x - y).join(' / ')} mm` : '';
+      const dn = b.diams && b.diams.size ? ` — ${[...b.diams].sort((x, y) => x - y).map(d => 'DN' + d).join(' / ')}` : '';
       b.label = b.type === 'RES' ? `Réseau ${b.mat} ${b.IN || '?'} ${b.annee || '?'}${dn}` : TYPE_LABEL[b.type];
       b.cells = {}; b.auto = {};
       return b;

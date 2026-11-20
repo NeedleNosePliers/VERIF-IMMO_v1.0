@@ -1,7 +1,7 @@
 /* VERIF-IMMO — interface. Tout est traité localement dans le navigateur. */
 (function () {
   'use strict';
-  const VERSION = '6.13';
+  const VERSION = '6.14';
   const APPNAME = 'VERIF-IMMO';
   const E = window.VIEngine;
   const STORE_KEY = 'verifimmo.v1';
@@ -729,12 +729,12 @@
     const bs = R.biens.filter(b => !b.virtuel || b.exact).slice().sort((x, y) => (x.type === 'RES' ? 0 : 1) - (y.type === 'RES' ? 0 : 1) || String(x.mat).localeCompare(String(y.mat)) || String(x.IN).localeCompare(String(y.IN)) || (+x.annee || 0) - (+y.annee || 0));
     if (!bs.length) return '';
     const u = b => b.unit === 'm' ? ' m' : '';
-    const rows = bs.map(b => `<tr><td>${esc(b.type === 'RES' ? 'Réseau' : E.TYPE_LABEL[b.type])}</td><td>${esc(b.mat || '')}</td><td>${esc(b.IN || '')}</td><td class="num">${b.diams && b.diams.size ? [...b.diams].sort((x, y) => x - y).join(' / ') : ''}</td><td>${esc(b.annee || '')}</td><td class="num">${(b.lines || []).length}</td><td class="num">${fmt(b.exact)}${u(b)}</td><td class="num"><b>${fmt(b.cap)}${u(b)}</b></td><td class="num">${b.exactTube ? fmt(b.exactTube) + u(b) : '—'}</td></tr>`).join('');
+    const rows = bs.map(b => `<tr><td>${esc(b.type === 'RES' ? 'Réseau' : E.TYPE_LABEL[b.type])}</td><td>${esc(b.mat || '')}</td><td>${esc(b.IN || '')}</td><td>${b.diams && b.diams.size ? [...b.diams].sort((x, y) => x - y).map(d => 'DN' + d).join(' / ') : ''}</td><td>${esc(b.annee || '')}</td><td class="num">${(b.lines || []).length}</td><td class="num">${fmt(b.exact)}${u(b)}</td><td class="num"><b>${fmt(b.cap)}${u(b)}</b></td><td class="num">${b.exactTube ? fmt(b.exactTube) + u(b) : '—'}</td></tr>`).join('');
     const res = bs.filter(b => b.type === 'RES');
     const tot = res.length ? `<tr><td colspan="5"><b>Total réseau</b></td><td class="num">${res.reduce((x, b) => x + (b.lines || []).length, 0)}</td><td class="num">${fmt(res.reduce((x, b) => x + b.exact, 0))} m</td><td class="num"><b>${fmt(res.reduce((x, b) => x + b.cap, 0))} m</b></td><td class="num">${fmt(res.reduce((x, b) => x + b.exactTube, 0))} m</td></tr>` : '';
     return `<h3>Additions : même matière, même IN, même année</h3>
       <p class="small muted">Lignes non ignorées. « À saisir » = somme arrondie au mètre supérieur, quantité du bien dans l'écran ORC.</p>
-      <div class="tw" style="max-width:820px"><table><thead><tr><th>Type</th><th>Matière</th><th>IN</th><th class="num">DN (mm)</th><th>Année</th><th class="num">Tronçons</th><th class="num">Somme long. inst.</th><th class="num">À saisir</th><th class="num">dont tubé</th></tr></thead><tbody>${rows}${tot}</tbody></table></div>`;
+      <div class="tw" style="max-width:820px"><table><thead><tr><th>Type</th><th>Matière</th><th>IN</th><th>DN</th><th>Année</th><th class="num">Tronçons</th><th class="num">Somme long. inst.</th><th class="num">À saisir</th><th class="num">dont tubé</th></tr></thead><tbody>${rows}${tot}</tbody></table></div>`;
   }
   function renderTroncons(a, R) {
     if (!R.lines.length) return `<div class="card"><p>Aucun tronçon : chargez les fichiers carto.</p></div>`;
