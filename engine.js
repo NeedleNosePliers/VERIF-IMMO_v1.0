@@ -690,8 +690,13 @@
     const reCode = /([A-Z0-9]{2,4}-?[0-9OIL]{7}-?[0-9OIL]-?C[0-9IL]{1,2}-?[0-9A-Z]{2}-?[I1L]?[0-9OIL]{2,3})/i;
     let zone = 1;
     for (const raw of String(text).split(/\r?\n/)) {
-      const line = raw.replace(/[|]/g, ' ').replace(/\s+/g, ' ').trim();
+      let line = raw.replace(/[|]/g, ' ').replace(/\s+/g, ' ').trim();
       if (/^d[ée]pose\b/i.test(line)) { zone = 2; continue; }
+      // unités mal lues (PpCE, PCF…) et nombre collé à l'unité (8M)
+      line = line.replace(/\bP\w?C[EF]\b/gi, 'PCE').replace(/(\d)(M|PCE)\b/g, '$1 $2');
+      // date de fin de ligne, parfois tronquée par la largeur de colonne (« 29.09... »)
+      let dateLue = '';
+      line = line.replace(/\s(\d{2})[.\/](\d{2})(?:[.\/](\d{4}))?(?:\.{1,3}|…)?\s*$/, (m0, dd, mm2, yy) => { dateLue = yy ? `${dd}.${mm2}.${yy}` : `${dd}.${mm2}.`; return ''; });
       const m = line.match(reCode);
       if (!m) continue;
       const code = fixEotp(m[1]);
@@ -716,7 +721,7 @@
       const mm = mid.match(/\s(A|PE|AC|FG|FD|[A-Z]{1,3})\s+(IN[1-3IL])\b/i);
       if (mm && fixIN(mm[2])) { mat = mm[1].toUpperCase(); IN = fixIN(mm[2]); designation = mid.slice(0, mm.index).trim(); }
       deposeRows.push({ eotp: code, insee, nat, designation, mat, IN, annee: tail[1] ? +tail[1] : null,
-        prev: numFr(tail[2]), unit: tail[3].toUpperCase(), reel: tail[4] != null ? numFr(tail[4]) : null, date: tail[6] || '' });
+        prev: numFr(tail[2]), unit: tail[3].toUpperCase(), reel: tail[4] != null ? numFr(tail[4]) : null, date: tail[6] || dateLue });
     }
     return { eotpRows, deposeRows };
   }
@@ -901,7 +906,8 @@
       for (const d of rows) {
         if (d.fam === 'PDR' || d.fam === '?' || !d.date) continue;
         const att = dateCarto[bienKeyOf(d)];
-        if (att && norm8(d.date) !== att) C.dates.push({ eotp: d.eotp, label: d.fam === 'RES' ? `${d.mat} ${d.IN} ${d.annee}` : TYPE_LABEL[d.fam], sap: norm8(d.date), attendu: att });
+        const sd = norm8(d.date); // date parfois tronquée sur la capture (« 29.09... ») : on compare ce qui est lisible
+        if (att && sd !== att && !(/^\d{2}\/\d{2}\/?$/.test(sd) && att.startsWith(sd.replace(/\/?$/, '/')))) C.dates.push({ eotp: d.eotp, label: d.fam === 'RES' ? `${d.mat} ${d.IN} ${d.annee}` : TYPE_LABEL[d.fam], sap: norm8(d.date), attendu: att });
       }
     }
     out.nbControle = C.biens.filter(x => !x.ok).length + C.equilibre.filter(x => !x.ok).length + C.abandon.filter(x => !x.ok).length + C.dates.length + C.nat.length + out.pose.filter(x => !x.ok).length;
