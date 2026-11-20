@@ -1,7 +1,7 @@
 /* VERIF-IMMO — interface. Tout est traité localement dans le navigateur. */
 (function () {
   'use strict';
-  const VERSION = '6.4';
+  const VERSION = '6.5';
   const APPNAME = 'VERIF-IMMO';
   const E = window.VIEngine;
   const STORE_KEY = 'verifimmo.v1';
@@ -391,10 +391,12 @@
     const dts = a.dt || [];
     const caps = R && R.dt ? R.dt.captures : [];
     const poseE = R ? R.pose.filter(p => p.eotp).map(p => p.eotp) : [];
+    const elemE = R ? R.elements.filter(e => (E.parseEotpCode(e.code) || {}).elem).map(e => e.code) : [];
     const inp = (i, f, v, w) => `<input class="t" style="min-width:${w || 70}px" data-dt="${i}:${f}" value="${esc(v ?? '')}">`;
     const rows = dts.map((d, i) => {
       const c = caps.find(x => x.id === d.id) || {};
-      const sel = `<select data-dt="${i}:eotpChoisi"><option value="">${esc(c.eotpRetenu ? c.eotpRetenu + (c.sure ? '' : ' (à vérifier)') : 'EOTP non reconnu')}</option>${poseE.map(e => `<option value="${esc(e)}" ${d.eotpChoisi === e ? 'selected' : ''}>${esc(e)}</option>`).join('')}</select>`;
+      const why = { pasDeCarto: 'EOTP non reconnu : fichiers carto pas encore chargés', pasDeListe: 'EOTP non reconnu : liste des EOTP vide', codeIllisible: 'EOTP non reconnu : code illisible sur la capture, choisissez-le', absentListe: 'EOTP non reconnu : ' + (d.eotp || '') + ' absent de la liste des EOTP' }[c.raison] || 'EOTP non reconnu';
+      const sel = `<select data-dt="${i}:eotpChoisi"><option value="">${esc(c.eotpRetenu ? c.eotpRetenu + (c.sure ? '' : ' (à vérifier)') : why)}</option>${elemE.map(e => `<option value="${esc(e)}" ${d.eotpChoisi === e ? 'selected' : ''}>${esc(e)}${poseE.includes(e) ? '' : ' (sans pose carto)'}</option>`).join('')}</select>${c.raison === 'sansPose' ? '<div class="small muted">aucune pose dans la carto pour cet EOTP</div>' : c.raison === 'pasDeCarto' && c.eotpRetenu ? '<div class="small muted">fichiers carto pas encore chargés : rien à comparer</div>' : ''}`;
       return `<tr><td>${sel}<div class="small muted">lu : ${esc(d.eotpRaw || '—')}</div></td><td>${inp(i, 'qte', d.qte == null ? '' : fmt(d.qte))}</td><td>${inp(i, 'unite', d.unite, 40)}</td><td>${inp(i, 'dateMes', d.dateMes, 95)}</td><td>${inp(i, 'dateCloture', d.dateCloture, 95)}</td><td>${inp(i, 'codePlan', d.codePlan, 40)}</td><td>${inp(i, 'codeMat', d.codeMat, 40)}</td><td>${inp(i, 'diametre', d.diametre, 60)}</td><td>${inp(i, 'pression', d.pression, 50)}</td><td>${inp(i, 'nat', d.nat, 55)}</td><td><button class="btn sm danger" data-dtdel="${i}">✕</button></td></tr>`;
     }).join('');
     if (!dts.length) return '';

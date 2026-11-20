@@ -766,8 +766,15 @@
         if (c.length === 1) eotp = c[0].eotp; else if (c.length) eotp = c[0].eotp;
         sure = c.length === 1;
       }
-      out.captures.push({ ...d, eotpRetenu: eotp, sure });
+      // EOTP lu, connu dans la liste SAP mais sans pose dans la carto (ex. CP 16, AB) : reconnu, sans valeur attendue
+      let raison = null;
+      const elems = (R.elements || []).map(e => e.code);
+      if (!eotp && d.eotp && elems.includes(d.eotp)) { eotp = d.eotp; sure = true; }
+      if (eotp && !poseE.some(p => p.eotp === eotp)) raison = R.pose.length ? 'sansPose' : 'pasDeCarto';
+      if (!eotp) raison = !R.pose.length ? 'pasDeCarto' : !elems.length ? 'pasDeListe' : (!d.eotp ? 'codeIllisible' : 'absentListe');
+      out.captures.push({ ...d, eotpRetenu: eotp, sure, raison });
     }
+    for (const c of out.captures) if (c.raison === 'sansPose') out.rows.push({ eotp: c.eotpRetenu, champ: 'Qté réelle (en serv)', attendu: 'aucune pose dans la carto', sap: c.qte == null ? '—' : fmtN(c.qte), ok: null, info: 'EOTP sans pose dans la carto' });
     for (const p of poseE) {
       const d = out.captures.find(x => x.eotpRetenu === p.eotp);
       if (!d) { out.rows.push({ eotp: p.eotp, champ: 'Capture', attendu: '', sap: '', ok: null, info: 'pas de capture' }); continue; }
